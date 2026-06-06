@@ -10,7 +10,7 @@ Endpoints:
   GET  /api/jobs/{id}/frames/{name}   -> a step frame image
   GET  /api/schema                    -> the JSON Schema contract
 """
-import json, shutil, threading, time, uuid
+import json, re, shutil, sys, threading, time, unicodedata, uuid
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
@@ -23,6 +23,26 @@ from pipeline import process_job, write_status, ts_to_seconds, extract_frame
 import docx_export
 import vision
 import sam_backend
+
+# Force UTF-8 I/O so prints never crash under a C/ascii locale (runs everywhere).
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+
+def safe_filename(name: str, fallback: str = "upload.bin") -> str:
+    """ASCII-safe filename (HTTP-header + cross-platform safe), keeping the extension.
+    Non-ASCII (smart quotes, umlauts, emoji) is transliterated/stripped — otherwise
+    the name reaches Gemini's upload as a header value and httpx can't ascii-encode it."""
+    p = Path(name or "")
+    stem = unicodedata.normalize("NFKD", p.stem).encode("ascii", "ignore").decode("ascii")
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._")
+    ext = re.sub(r"[^A-Za-z0-9.]+", "", p.suffix)
+    out = ((stem or "upload") + ext)[:120]
+    return out or fallback
+
 
 app = FastAPI(title="ABICOR Assembly-Doc Generator")
 STATIC = config.APP_DIR / "static"
@@ -113,7 +133,7 @@ async def create_job(
     job_dir = config.JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     try:
-        video_name = Path(video.filename).name or "input.mp4"
+        video_name = safe_filename(video.filename, "input.mp4")
         await save_upload(video, job_dir / video_name)
 
         options = {
@@ -125,7 +145,7 @@ async def create_job(
         }
 
         if parts_pdf is not None and parts_pdf.filename:
-            parts_name = Path(parts_pdf.filename).name
+            parts_name = safe_filename(parts_pdf.filename, "parts.pdf")
             await save_upload(parts_pdf, job_dir / parts_name)
             options["parts_filename"] = parts_name
 
@@ -234,7 +254,7 @@ async def upload_image(job_id: str, image: UploadFile = File(...)):
     if not job_dir.exists():
         raise HTTPException(404, "job not found")
     up = job_dir / "uploads"; up.mkdir(exist_ok=True)
-    name = f"up_{uuid.uuid4().hex[:8]}_{Path(image.filename).name}"
+    name = f"up_{uuid.uuid4().hex[:8]}_{safe_filename(image.filename, 'img.jpg')}"
     with open(up / name, "wb") as f:
         shutil.copyfileobj(image.file, f)
     return {"name": name, "url": f"/api/jobs/{job_id}/uploads/{name}"}
