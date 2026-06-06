@@ -30,6 +30,8 @@ class InstructionPoint(BaseModel):
     point: int = Field(..., description="1-based order within the step")
     text: str = Field(..., description="Short actionable instruction a newcomer can follow")
     action_type: ActionType = Field(..., description="Controlled action category")
+    timestamp: str = Field(..., description="MM:SS when this exact action happens in the "
+                           "video (inside the step's start-end window, increasing with point order)")
 
 
 class Component(BaseModel):
@@ -111,7 +113,9 @@ step, break the worker's actions into an ordered list of short, concrete instruc
 points: ONE discrete physical action per point, written as a clear instruction a \
 newcomer can follow (e.g. "Slide the orange protective cap onto the thin electrical \
 wire"). Preserve the worker's explanatory intent and small tips, but phrase every point \
-as an actionable instruction. Prefer several small points over one long sentence.
+as an actionable instruction. Prefer several small points over one long sentence. \
+Give EACH instruction point a `timestamp` (MM:SS) — the exact moment that action happens \
+in the video; it must fall inside the step's start-end window and increase with point order.
 
 SEGMENTATION
 - step = one coherent assembly task. station = a phase grouping related steps. If the \

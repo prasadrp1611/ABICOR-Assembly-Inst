@@ -6,17 +6,32 @@ let SAM_AVAILABLE = false;
 let HL_MODE = "box";
 let lastInstructions = "";   // persists the refine/rerun prompt across re-renders
 
-// ---- fun mode (easter egg): plays audio while a job is parsing ----
+// ---- fun mode (easter egg): the fun button swaps the main-page tutorial video
+//      for a meme video (in place) and plays the bing-bong mp3 as the soundtrack ----
 let FUN = false;
-const funAudio = new Audio("/static/funmode.mp3");
+const FUN_VIDEO_ID = "xRQnJyP77tY";
+const funAudio = new Audio("/static/funmode.mp3");   // keep the bing-bong music
 funAudio.loop = true;
 funAudio.volume = 0.85;
-function funStop() { try { funAudio.pause(); funAudio.currentTime = 0; } catch (e) {} }
+const HOWTO_MEDIA =
+  `<video class="howto-video" src="/static/howto.mp4" controls preload="metadata" poster="/static/genius.png"></video>`;
+function funApply() {
+  const media = $("#howto-media");
+  if (FUN) {
+    if (media) media.innerHTML =                     // meme is muted so it doesn't fight the mp3
+      `<iframe class="howto-video" src="https://www.youtube-nocookie.com/embed/${FUN_VIDEO_ID}` +
+      `?autoplay=1&mute=1&playsinline=1&rel=0&loop=1&playlist=${FUN_VIDEO_ID}" ` +
+      `allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`;
+    funAudio.play().catch(() => {});
+  } else {
+    if (media) media.innerHTML = HOWTO_MEDIA;
+    try { funAudio.pause(); funAudio.currentTime = 0; } catch (e) {}
+  }
+}
 $("#fun-btn").addEventListener("click", () => {
   FUN = !FUN;
   $("#fun-btn").classList.toggle("on", FUN);
-  if (!FUN) funStop();
-  else if (currentJob) funAudio.play().catch(() => {});
+  funApply();
 });
 
 // ---- file pickers (click + drag/drop, single dialog) ----
@@ -83,7 +98,6 @@ $("#job-form").addEventListener("submit", async (e) => {
     $("#howto-card") && $("#howto-card").classList.add("hidden");
     $("#progress-card").classList.remove("hidden");
     $("#result").classList.add("hidden");
-    if (FUN) funAudio.play().catch(() => {});
     poll();
   } catch (err) {
     alert(err.message);
@@ -109,8 +123,8 @@ function poll() {
     .then((s) => {
       $("#bar").style.width = (s.progress || 0) + "%";
       $("#stage-msg").textContent = s.message || STAGES[s.stage] || s.stage;
-      if (s.status === "done") { funStop(); return showResult(); }
-      if (s.status === "error") { funStop(); return showError(s); }
+      if (s.status === "done") return showResult();
+      if (s.status === "error") return showError(s);
       pollTimer = setTimeout(poll, 1800);
     })
     .catch(() => (pollTimer = setTimeout(poll, 2500)));
@@ -145,7 +159,6 @@ async function doRerun() {
     $("#stage-msg").textContent = "Re-running with your instructions…";
     $("#bar").style.width = "0%";
     $("#progress-card").scrollIntoView({ behavior: "smooth" });
-    if (FUN) funAudio.play().catch(() => {});
     poll();
   } catch (e) {
     alert("Rerun failed: " + e.message);
@@ -238,6 +251,8 @@ function initSteps() {
       if (e.target.closest("select")) return;
       openLightbox(n);
     });
+    el.querySelectorAll(".pt-shot").forEach((im) =>
+      im.addEventListener("click", () => openImageLightbox(im.dataset.img)));
 
     // Part-ID pickers (confidence-ranked) + custom override
     el.querySelectorAll(".part-pick").forEach((sel) => {
@@ -349,6 +364,25 @@ async function onPartSel(n, sel) {
 }
 
 // ---- lightbox ----
+function ensureLightbox() {
+  let box = $("#lightbox");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "lightbox"; box.className = "lightbox";
+    box.innerHTML = `<button class="lb-close">✕</button><div class="lb-body"></div>`;
+    document.body.appendChild(box);
+    box.addEventListener("click", (e) => {
+      if (e.target === box || e.target.classList.contains("lb-close")) box.classList.remove("show");
+    });
+  }
+  return box;
+}
+function openImageLightbox(url) {
+  const box = ensureLightbox();
+  box.querySelector(".lb-body").innerHTML = `<img src="${url}"/>`;
+  box.classList.add("show");
+}
+
 function openLightbox(n) {
   const img = document.getElementById(`img-${n}`);
   const showingStill = !img.classList.contains("hidden");
@@ -556,10 +590,14 @@ function renderStep(step) {
   const n = step.step_number;
   const start = secOf(step.timestamp_start);
   const end = Math.max(start + 1, secOf(step.timestamp_end || step.timestamp_start));
-  const points = step.instructions.map((i) => `
-    <li><span class="pt-n"></span>
+  const points = step.instructions.map((i) => {
+    const thumb = i.image
+      ? `<img class="pt-shot" src="${frameURL(i.image)}" data-img="${frameURL(i.image)}"
+           title="${esc(i.timestamp || "")}" loading="lazy" onerror="this.remove()"/>` : "";
+    return `<li><span class="pt-n"></span>
       <span class="act ${i.action_type}">${i.action_type.replace("_", " ")}</span>
-      <span class="pt-text" data-step="${n}">${esc(i.text)}</span></li>`).join("");
+      <span class="pt-text" data-step="${n}">${esc(i.text)}</span>${thumb}</li>`;
+  }).join("");
 
   const hasCandidates = (step.components || []).some((c) => c.part_candidates && c.part_candidates.length);
   const comps = (step.components || []).map((c) => {
@@ -605,11 +643,22 @@ function renderStep(step) {
     `<div class="deictic">“<b>${esc(x.utterance)}</b>” → ${esc(x.refers_to)}</div>`).join("");
   const tips = (step.tips || []).map((t) => `<div class="tip">💡 ${esc(t)}</div>`).join("");
   const warns = (step.warnings || []).map((t) => `<div class="warn">⚠ ${esc(t)}</div>`).join("");
+  // language-aware narration (seamless: no redundant English for English videos)
   const nar = step.narration || {};
-  const narr = (nar.original_text || nar.english_text) ? `
-    <details class="narr"><summary>Narration</summary>
-      <div class="narr-body"><div class="orig">${esc(nar.original_text || "")}</div>
-        <div>${esc(nar.english_text || "")}</div></div></details>` : "";
+  const lang = (nar.original_language || "").toLowerCase().slice(0, 2);
+  const isEN = lang === "en" || lang === "";
+  const orig = (nar.original_text || "").trim();
+  const en = (nar.english_text || "").trim();
+  const LANGS = { de: "German", en: "English", fr: "French", es: "Spanish", it: "Italian",
+    pt: "Portuguese", nl: "Dutch", pl: "Polish", tr: "Turkish", zh: "Chinese", ja: "Japanese",
+    ko: "Korean", ru: "Russian", ar: "Arabic", hi: "Hindi", sv: "Swedish", cs: "Czech" };
+  const langName = LANGS[lang] || (nar.original_language || "Original");
+  let narrBody = "";
+  if (orig) narrBody += `<div class="orig"><span class="nlang">${esc(langName)}</span> ${esc(orig)}</div>`;
+  if (en && !isEN && en.toLowerCase() !== orig.toLowerCase())
+    narrBody += `<div class="nen"><span class="nlang">English</span> ${esc(en)}</div>`;
+  const narr = narrBody
+    ? `<details class="narr"><summary>Narration</summary><div class="narr-body">${narrBody}</div></details>` : "";
   const partOpts = (step.components || [])
     .map((c) => `<option value="${esc(c.name)}">▸ ${esc(c.name)}</option>`).join("");
 
@@ -625,6 +674,8 @@ function renderStep(step) {
         <select class="frame-sel" data-step="${n}" title="pick the image to use">
           <option value="__video">▶ Video snippet</option>
           <option value="__default">🖼 Frame @ ${esc(step.timestamp_start)}</option>
+          ${step.instructions.filter((i) => i.image).map((i, k) =>
+            `<option value="${esc(i.image)}">🖼 Sub-step ${k + 1} @ ${esc(i.timestamp || "")}</option>`).join("")}
         </select>
         <select class="part-sel" data-step="${n}" title="highlight / segment a part">
           <option value="">🎯 Highlight: off</option>

@@ -74,6 +74,9 @@ def build_docx(model: dict, job_dir: Path, out_path: Path):
     sec = doc.sections[0]
     sec.top_margin = Mm(14); sec.bottom_margin = Mm(26)
     sec.left_margin = Mm(18); sec.right_margin = Mm(18)
+    # compact spacing so the document doesn't leave big white gaps
+    npf = doc.styles["Normal"].paragraph_format
+    npf.space_before = Pt(0); npf.space_after = Pt(2); npf.line_spacing = 1.0
 
     # ---- header block (title + logo) — all fields template-editable ----
     htab = doc.add_table(rows=1, cols=2); _no_borders(htab); _set_widths(htab, [120, 54])

@@ -156,12 +156,29 @@ def process_chunked(client, video_path: str, job_dir: Path, progress,
 
 def extract_all_frames(video_path: str, data: dict, frames_dir: Path, progress):
     progress(stage="extracting_frames", progress=65,
-             message="Extracting a frame for each step…")
+             message="Extracting a frame for each step and sub-step…")
     frames_dir.mkdir(exist_ok=True)
     for st in data["stations"]:
         for step in st["steps"]:
-            secs = ts_to_seconds(step["timestamp_start"])
-            extract_frame(video_path, secs, str(frames_dir / step["frame_image"]))
+            t0 = ts_to_seconds(step["timestamp_start"])
+            t1 = ts_to_seconds(step.get("timestamp_end") or step["timestamp_start"])
+            extract_frame(video_path, t0, str(frames_dir / step["frame_image"]))
+            # one frame per instruction point (sub-step) at its own timestamp
+            pts = step.get("instructions", [])
+            for i, pt in enumerate(pts):
+                ts = None
+                if pt.get("timestamp"):
+                    try:
+                        ts = ts_to_seconds(pt["timestamp"])
+                    except Exception:
+                        ts = None
+                if ts is None or ts < t0 - 0.5 or ts > t1 + 1.0:
+                    # fall back: spread evenly across the step's time window
+                    ts = t0 + (t1 - t0) * (i / max(1, len(pts))) if t1 > t0 else t0
+                name = f"step_{step['step_number']:02d}_s{i + 1:02d}.jpg"
+                if extract_frame(video_path, ts, str(frames_dir / name)):
+                    pt["image"] = name
+                    pt["frame_seconds"] = round(ts, 1)
 
 
 def extract_parts_table(client, pdf_path: str) -> list:
