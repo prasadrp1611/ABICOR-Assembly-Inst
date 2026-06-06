@@ -15,17 +15,20 @@ funAudio.loop = true;
 funAudio.volume = 0.85;
 const HOWTO_MEDIA =
   `<video class="howto-video" src="/static/howto.mp4" controls preload="metadata" poster="/static/genius.png"></video>`;
+function funAudioStop() { try { funAudio.pause(); funAudio.currentTime = 0; } catch (e) {} }
 function funApply() {
+  // swap the main-page tutorial video for the meme (standard embed = no VEVO
+  // "unavailable"; the user can press play). Audio is handled separately, on submit.
   const media = $("#howto-media");
+  if (!media) return;
   if (FUN) {
-    if (media) media.innerHTML =                     // meme is muted so it doesn't fight the mp3
-      `<iframe class="howto-video" src="https://www.youtube-nocookie.com/embed/${FUN_VIDEO_ID}` +
-      `?autoplay=1&mute=1&playsinline=1&rel=0&loop=1&playlist=${FUN_VIDEO_ID}" ` +
-      `allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`;
-    funAudio.play().catch(() => {});
+    media.innerHTML =
+      `<iframe class="howto-video" src="https://www.youtube.com/embed/${FUN_VIDEO_ID}` +
+      `?rel=0&playsinline=1&modestbranding=1" allow="encrypted-media; fullscreen" ` +
+      `referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
   } else {
-    if (media) media.innerHTML = HOWTO_MEDIA;
-    try { funAudio.pause(); funAudio.currentTime = 0; } catch (e) {}
+    media.innerHTML = HOWTO_MEDIA;
+    funAudioStop();
   }
 }
 $("#fun-btn").addEventListener("click", () => {
@@ -98,6 +101,7 @@ $("#job-form").addEventListener("submit", async (e) => {
     $("#howto-card") && $("#howto-card").classList.add("hidden");
     $("#progress-card").classList.remove("hidden");
     $("#result").classList.add("hidden");
+    if (FUN) funAudio.play().catch(() => {});   // audio starts only after submit
     poll();
   } catch (err) {
     alert(err.message);
@@ -123,8 +127,8 @@ function poll() {
     .then((s) => {
       $("#bar").style.width = (s.progress || 0) + "%";
       $("#stage-msg").textContent = s.message || STAGES[s.stage] || s.stage;
-      if (s.status === "done") return showResult();
-      if (s.status === "error") return showError(s);
+      if (s.status === "done") { funAudioStop(); return showResult(); }
+      if (s.status === "error") { funAudioStop(); return showError(s); }
       pollTimer = setTimeout(poll, 1800);
     })
     .catch(() => (pollTimer = setTimeout(poll, 2500)));
@@ -159,6 +163,7 @@ async function doRerun() {
     $("#stage-msg").textContent = "Re-running with your instructions…";
     $("#bar").style.width = "0%";
     $("#progress-card").scrollIntoView({ behavior: "smooth" });
+    if (FUN) funAudio.play().catch(() => {});
     poll();
   } catch (e) {
     alert("Rerun failed: " + e.message);
