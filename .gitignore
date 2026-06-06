@@ -5,9 +5,13 @@
 jobs/
 
 # python
+.venv/
+venv/
+env/
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 
 # generated / temp office files
 *.docx
