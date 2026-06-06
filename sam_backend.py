@@ -10,9 +10,13 @@ The engine localises a part (bounding box); SAM turns that box into a pixel
 mask. If torch/transformers are missing, available() is False and the app falls
 back to box highlighting — so it runs everywhere.
 """
+import threading
+
 import numpy as np
 
 import config
+
+_load_lock = threading.Lock()
 
 _MODEL_IDS = {
     "sam3": "facebook/sam3",
@@ -63,18 +67,21 @@ def load():
     """Load the first available backend per preference. Returns kind or None."""
     if _state["model"] is not None:
         return _state["kind"]
-    for kind in config.SAM_PREFERENCE:
-        if kind not in _MODEL_IDS:
-            continue
-        try:
-            model, proc = _load_one(kind)
-            _state.update(kind=kind, model=model, proc=proc)
-            print(f"[SAM] active backend: {kind} ({_MODEL_IDS[kind]})")
-            return kind
-        except Exception as e:
-            print(f"[SAM] {kind} unavailable -> {str(e)[:140]}")
-    print("[SAM] no backend could be loaded; falling back to box mode")
-    return None
+    with _load_lock:                       # serialise the (possibly large) download
+        if _state["model"] is not None:
+            return _state["kind"]
+        for kind in config.SAM_PREFERENCE:
+            if kind not in _MODEL_IDS:
+                continue
+            try:
+                model, proc = _load_one(kind)
+                _state.update(kind=kind, model=model, proc=proc)
+                print(f"[SAM] active backend: {kind} ({_MODEL_IDS[kind]})")
+                return kind
+            except Exception as e:
+                print(f"[SAM] {kind} unavailable -> {str(e)[:140]}")
+        print("[SAM] no backend could be loaded; falling back to box mode")
+        return None
 
 
 def warmup():

@@ -157,11 +157,30 @@ details.narr summary{cursor:pointer;font-size:12px;color:var(--magenta);font-wei
 .narr-body{font-size:12.5px;margin-top:6px;color:var(--ink)}
 .narr-body .orig{color:var(--muted);font-style:italic}
 
-.hl-btn{margin-top:8px;width:100%;background:#fff;border:1px solid var(--magenta);
-  color:var(--magenta);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:600;
-  cursor:pointer;transition:.15s}
-.hl-btn:hover{background:#fdf2f8}
-.hl-btn:disabled{opacity:.6;cursor:wait}
+/* per-step media (video snippet / frame / highlight) */
+.media-col{display:flex;flex-direction:column;gap:8px}
+.media{position:relative;width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden;
+  border:1px solid var(--line);background:#000;cursor:zoom-in}
+.media .snip,.media .still{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.media-badge{position:absolute;left:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;
+  font-size:11px;padding:4px 9px;border-radius:0 8px 0 8px;max-width:100%}
+.media-ctrl{display:flex;gap:6px}
+.media-ctrl select{flex:1;min-width:0;padding:6px 6px;border:1px solid var(--line);
+  border-radius:8px;font-size:11.5px;background:#fff;cursor:pointer}
+.media-ctrl select:focus{outline:none;border-color:var(--magenta)}
+
+/* lightbox */
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;z-index:90;
+  align-items:center;justify-content:center}
+.lightbox.show{display:flex}
+.lightbox .lb-body img,.lightbox .lb-body video{max-width:92vw;max-height:88vh;border-radius:10px}
+.lightbox .lb-close{position:absolute;top:18px;right:24px;background:rgba(255,255,255,.15);
+  border:1px solid #fff;color:#fff;width:40px;height:40px;border-radius:50%;font-size:18px;cursor:pointer}
+
+/* inline edit mode */
+#result.editing .step-title-text,#result.editing .pt-text{background:#fffbe6;
+  outline:1px dashed var(--magenta);border-radius:4px;padding:1px 4px}
+#toggle-edit.active{background:var(--magenta-d)}
 
 .onto-card{background:var(--card);border:1px solid var(--line);border-radius:14px;
   padding:18px;text-align:center}

@@ -125,25 +125,33 @@ function resetForm() {
 }
 
 // ---- render result ----
+let resultData = null;
+const chosenFrame = {};   // step -> frame filename, or null = show video snippet
+
+const secOf = (ts) => {
+  const p = String(ts).split(":").map(Number);
+  return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p.length === 2 ? p[0] * 60 + p[1] : p[0];
+};
+const pad2 = (n) => String(n).padStart(2, "0");
+const defFrame = (n) => `step_${pad2(n)}.jpg`;
+const frameURL = (name) => name && name.startsWith("up_")
+  ? `/api/jobs/${currentJob}/uploads/${name}` : `/api/jobs/${currentJob}/frames/${name}`;
+
 async function showResult() {
-  const data = await (await fetch(`/api/jobs/${currentJob}/result`)).json();
+  resultData = await (await fetch(`/api/jobs/${currentJob}/result`)).json();
   $("#progress-card").classList.add("hidden");
   const root = $("#result");
   root.classList.remove("hidden");
-  root.innerHTML = renderDoc(data);
+  root.innerHTML = renderDoc(resultData);
+
   $("#dl-json").addEventListener("click", () =>
-    download(`${(data.product.model || "assembly").replace(/\s+/g, "_")}.json`, data));
-  $("#open-editor").addEventListener("click", () =>
-    (window.location = `/editor?job=${currentJob}`));
+    download(`${(resultData.product.model || "assembly").replace(/\s+/g, "_")}.json`, resultData));
   $("#new-job").addEventListener("click", () => location.reload());
-  root.querySelectorAll(".hl-btn").forEach((b) =>
-    b.addEventListener("click", () => toggleHighlight(b)));
-  // highlight-mode selector
+  $("#toggle-edit").addEventListener("click", toggleEdit);
+  $("#export-docx").addEventListener("click", exportWord);
+
   const samBtn = $("#sam-btn");
-  if (samBtn && !SAM_AVAILABLE) {
-    samBtn.disabled = true;
-    samBtn.title = "SAM backend not installed (pip install -r requirements-sam.txt)";
-  }
+  if (samBtn && !SAM_AVAILABLE) { samBtn.disabled = true; samBtn.title = "SAM backend unavailable"; }
   $("#hl-mode") && $("#hl-mode").querySelectorAll("button").forEach((b) =>
     b.addEventListener("click", () => {
       if (b.disabled) return;
@@ -151,44 +159,178 @@ async function showResult() {
       $("#hl-mode").querySelectorAll("button").forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
     }));
+
+  initSteps();
   resetForm();
   root.scrollIntoView({ behavior: "smooth" });
 }
 
-async function toggleHighlight(btn) {
-  const step = btn.dataset.step;
-  const img = document.getElementById(`img-${step}`);
-  const mode = HL_MODE;
-  // currently showing this same mode -> revert to original
-  if (btn.dataset.shown === mode) {
-    img.src = img.dataset.orig;
-    btn.dataset.shown = "";
-    btn.textContent = "🔍 Highlight parts";
-    return;
-  }
-  const cacheKey = "hl_" + mode;
-  if (btn.dataset[cacheKey]) {
-    img.src = btn.dataset[cacheKey];
-    btn.dataset.shown = mode;
-    btn.textContent = "↩ Show original";
-    return;
-  }
-  btn.disabled = true;
-  btn.textContent = mode === "sam" ? "Segmenting (SAM)…" : "Locating parts…";
+// ---- per-step media controllers ----
+function initSteps() {
+  document.querySelectorAll(".step").forEach((el) => {
+    const n = el.dataset.step, start = +el.dataset.start, end = +el.dataset.end;
+    const vid = document.getElementById(`vid-${n}`);
+    const still = document.getElementById(`img-${n}`);
+    chosenFrame[n] = null;
+
+    // section video snippet via media fragment (autoplay + loop the fragment, muted)
+    vid.src = `/api/jobs/${currentJob}/video#t=${start},${end}`;
+    const seekStart = () => { try { vid.currentTime = start; } catch (e) {} };
+    vid.addEventListener("loadedmetadata", () => { seekStart(); vid.play().catch(() => {}); });
+    vid.addEventListener("timeupdate", () => {
+      if (vid.currentTime >= end || vid.currentTime < start - 0.2) seekStart();
+    });
+
+    el.querySelector(".frame-sel").addEventListener("mousedown",
+      (e) => loadFrameOptions(n, e.target), { once: true });
+    el.querySelector(".frame-sel").addEventListener("change", (e) => onFrameSel(n, e.target));
+    el.querySelector(".part-sel").addEventListener("change", (e) => onPartSel(n, e.target));
+    el.querySelector(".media").addEventListener("click", (e) => {
+      if (e.target.closest("select")) return;
+      openLightbox(n);
+    });
+  });
+}
+
+async function loadFrameOptions(n, sel) {
+  if (sel.dataset.loaded) return;
+  sel.dataset.loaded = "1";
   try {
-    const r = await fetch(`/api/jobs/${currentJob}/highlight?step=${step}&mode=${mode}`);
-    if (!r.ok) throw new Error("highlight failed");
-    const d = await r.json();
-    const url = d.url + "?t=" + Date.now();
-    btn.dataset[cacheKey] = url;
-    img.src = url;
-    btn.dataset.shown = mode;
-    const tag = d.mode === "sam" ? "SAM" : "boxes";
-    btn.textContent = d.count ? `↩ Show original (${d.count} · ${tag})` : "↩ Show original";
-  } catch (e) {
-    btn.textContent = "🔍 Highlight parts";
+    const { options } = await (await fetch(`/api/jobs/${currentJob}/frame_options?step=${n}&count=6`)).json();
+    options.forEach((o) => {
+      if ([...sel.options].some((x) => x.value === o.name)) return;
+      const opt = document.createElement("option");
+      opt.value = o.name; opt.textContent = `Frame @ ${o.t}s`;
+      sel.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
+function showVideo(n) {
+  document.getElementById(`vid-${n}`).classList.remove("hidden");
+  document.getElementById(`img-${n}`).classList.add("hidden");
+}
+function showStill(n, url) {
+  const vid = document.getElementById(`vid-${n}`), img = document.getElementById(`img-${n}`);
+  vid.pause(); vid.classList.add("hidden");
+  img.src = url; img.classList.remove("hidden");
+}
+
+function onFrameSel(n, sel) {
+  const v = sel.value;
+  const badge = document.getElementById(`badge-${n}`);
+  if (v === "__video") {
+    chosenFrame[n] = null; showVideo(n);
+    document.getElementById(`vid-${n}`).play().catch(() => {});
+    badge.textContent = "▶ section";
+  } else {
+    const frame = v === "__default" ? defFrame(n) : v;
+    chosenFrame[n] = frame;
+    showStill(n, frameURL(frame));
+    badge.textContent = "🖼 frame";
+    const psel = document.querySelector(`.part-sel[data-step="${n}"]`);
+    if (psel && psel.value) onPartSel(n, psel);    // re-highlight on the new frame
   }
-  btn.disabled = false;
+}
+
+async function onPartSel(n, sel) {
+  const v = sel.value;
+  const badge = document.getElementById(`badge-${n}`);
+  if (!v) {                                         // off -> back to frame or video
+    if (chosenFrame[n]) showStill(n, frameURL(chosenFrame[n]));
+    else { showVideo(n); document.getElementById(`vid-${n}`).play().catch(() => {}); }
+    badge.textContent = chosenFrame[n] ? "🖼 frame" : "▶ section";
+    return;
+  }
+  const label = v === "__all" ? "" : v;
+  const frame = chosenFrame[n] || defFrame(n);
+  badge.textContent = HL_MODE === "sam" ? "⏳ segmenting…" : "⏳ locating…";
+  try {
+    const q = `step=${n}&mode=${HL_MODE}&frame=${encodeURIComponent(frame)}` +
+              (label ? `&label=${encodeURIComponent(label)}` : "");
+    const d = await (await fetch(`/api/jobs/${currentJob}/highlight?${q}`)).json();
+    showStill(n, d.url + "?t=" + Date.now());
+    const tag = d.mode === "sam" ? (d.backend || "SAM").toUpperCase() : "boxes";
+    badge.textContent = d.count ? `🎯 ${d.detections.join(", ")} · ${tag}` : `no match · ${tag}`;
+  } catch (e) { badge.textContent = "⚠ failed"; }
+}
+
+// ---- lightbox ----
+function openLightbox(n) {
+  const img = document.getElementById(`img-${n}`);
+  const showingStill = !img.classList.contains("hidden");
+  let box = $("#lightbox");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "lightbox"; box.className = "lightbox";
+    box.innerHTML = `<button class="lb-close">✕</button><div class="lb-body"></div>`;
+    document.body.appendChild(box);
+    box.addEventListener("click", (e) => { if (e.target === box || e.target.classList.contains("lb-close")) box.classList.remove("show"); });
+  }
+  const body = box.querySelector(".lb-body");
+  if (showingStill) {
+    body.innerHTML = `<img src="${img.src}"/>`;
+  } else {
+    const el = document.querySelector(`.step[data-step="${n}"]`);
+    body.innerHTML = `<video src="/api/jobs/${currentJob}/video#t=${el.dataset.start},${el.dataset.end}" autoplay loop muted controls></video>`;
+  }
+  box.classList.add("show");
+}
+
+// ---- inline edit + Word export ----
+function toggleEdit() {
+  const on = $("#result").classList.toggle("editing");
+  $("#toggle-edit").textContent = on ? "✓ Done" : "✎ Edit";
+  $("#toggle-edit").classList.toggle("active", on);
+  document.querySelectorAll(".step-title-text,.pt-text,.goal-edit").forEach((e) => {
+    e.contentEditable = on ? "true" : "false";
+  });
+}
+
+function buildExportModel() {
+  const d = resultData;
+  const steps = [];
+  d.stations.forEach((st) => st.steps.forEach((s) => {
+    const n = s.step_number;
+    const tEl = document.querySelector(`.step-title-text[data-step="${n}"]`);
+    const bullets = [...document.querySelectorAll(`.pt-text[data-step="${n}"]`)]
+      .map((e) => e.textContent.trim()).filter(Boolean);
+    steps.push({
+      include: true, number: n,
+      title: tEl ? tEl.textContent.trim() : s.title,
+      goal: s.goal,
+      bullets: bullets.length ? bullets : s.instructions.map((i) => i.text),
+      image: chosenFrame[n] || defFrame(n),
+      narration_de: (s.narration && s.narration.original_text) || "",
+      narration_en: (s.narration && s.narration.english_text) || "",
+      parts: (s.components || []).filter((c) => c.part_id).map((c) => ({ name: c.name, part_no: c.part_id })),
+    });
+  }));
+  return {
+    settings: {
+      product_name: d.product.name, model: d.product.model, id_number: d.product.id_number,
+      station_title: (d.stations[0] && d.stations[0].station_title) || "Station 1: Final Assembly",
+      bilingual: false, include_goal: true, include_narration: false, include_part_ids: true,
+      date: new Date().toLocaleDateString("de-DE"), drawn_by: "AI Documentation Engine",
+    }, steps,
+  };
+}
+
+async function exportWord() {
+  const btn = $("#export-docx"); btn.disabled = true; btn.textContent = "Building…";
+  try {
+    const r = await fetch(`/api/jobs/${currentJob}/export`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildExportModel()),
+    });
+    if (!r.ok) throw new Error("export failed");
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (resultData.product.model || "assembly_instruction").replace(/\s+/g, "_") + ".docx";
+    a.click(); URL.revokeObjectURL(a.href);
+  } catch (e) { alert("Export failed: " + e.message); }
+  btn.disabled = false; btn.textContent = "⬇ Export Word";
 }
 
 function renderDoc(d) {
@@ -210,8 +352,9 @@ function renderDoc(d) {
       <div class="doc-meta">${meta}</div>
       <p class="muted">${esc(d.summary || "")}</p>
       <div class="doc-actions">
-        <button class="btn-primary" id="open-editor">📝 Open in Word Editor</button>
-        <button class="btn-ghost" id="dl-json">⬇ Download JSON</button>
+        <button class="btn-primary" id="toggle-edit">✎ Edit</button>
+        <button class="btn-ghost" id="export-docx">⬇ Export Word</button>
+        <button class="btn-ghost" id="dl-json">⬇ JSON</button>
         <button class="btn-ghost" id="new-job">+ New video</button>
       </div>
       <div class="mode-row">
@@ -253,11 +396,13 @@ function renderOntology(d) {
 }
 
 function renderStep(step) {
-  const img = `/api/jobs/${currentJob}/frames/${encodeURIComponent(step.frame_image)}`;
+  const n = step.step_number;
+  const start = secOf(step.timestamp_start);
+  const end = Math.max(start + 1, secOf(step.timestamp_end || step.timestamp_start));
   const points = step.instructions.map((i) => `
     <li><span class="pt-n"></span>
       <span class="act ${i.action_type}">${i.action_type.replace("_", " ")}</span>
-      <span class="pt-text">${esc(i.text)}</span></li>`).join("");
+      <span class="pt-text" data-step="${n}">${esc(i.text)}</span></li>`).join("");
 
   const comps = (step.components || []).map((c) => {
     let pid = "", conf = "";
@@ -276,26 +421,37 @@ function renderStep(step) {
     `<div class="deictic">“<b>${esc(x.utterance)}</b>” → ${esc(x.refers_to)}</div>`).join("");
   const tips = (step.tips || []).map((t) => `<div class="tip">💡 ${esc(t)}</div>`).join("");
   const warns = (step.warnings || []).map((t) => `<div class="warn">⚠ ${esc(t)}</div>`).join("");
-
-  const n = step.narration || {};
-  const narr = (n.original_text || n.english_text) ? `
+  const nar = step.narration || {};
+  const narr = (nar.original_text || nar.english_text) ? `
     <details class="narr"><summary>Narration</summary>
-      <div class="narr-body">
-        <div class="orig">${esc(n.original_text || "")}</div>
-        <div>${esc(n.english_text || "")}</div>
-      </div></details>` : "";
+      <div class="narr-body"><div class="orig">${esc(nar.original_text || "")}</div>
+        <div>${esc(nar.english_text || "")}</div></div></details>` : "";
+  const partOpts = (step.components || [])
+    .map((c) => `<option value="${esc(c.name)}">▸ ${esc(c.name)}</option>`).join("");
 
   return `
-  <div class="step">
-    <div>
-      <img class="step-img" id="img-${step.step_number}" src="${img}" data-orig="${img}"
-           loading="lazy" onerror="this.style.opacity=.25"/>
-      <div class="step-cap">frame @ ${esc(step.timestamp_start)}</div>
-      <button class="hl-btn" data-step="${step.step_number}">🔍 Highlight parts</button>
+  <div class="step" data-step="${n}" data-start="${start}" data-end="${end}">
+    <div class="media-col">
+      <div class="media" data-step="${n}" title="click to enlarge">
+        <video class="snip" id="vid-${n}" muted loop playsinline preload="metadata"></video>
+        <img class="still hidden" id="img-${n}" onerror="this.style.opacity=.25"/>
+        <span class="media-badge" id="badge-${n}">▶ section</span>
+      </div>
+      <div class="media-ctrl">
+        <select class="frame-sel" data-step="${n}" title="pick the image to use">
+          <option value="__video">▶ Video snippet</option>
+          <option value="__default">🖼 Frame @ ${esc(step.timestamp_start)}</option>
+        </select>
+        <select class="part-sel" data-step="${n}" title="highlight / segment a part">
+          <option value="">🎯 Highlight: off</option>
+          <option value="__all">All parts</option>
+          ${partOpts}
+        </select>
+      </div>
     </div>
-    <div>
-      <div class="step-title"><span class="step-num">${step.step_number}</span>
-        ${esc(step.title)}
+    <div class="text-col">
+      <div class="step-title"><span class="step-num">${n}</span>
+        <span class="step-title-text" data-step="${n}">${esc(step.title)}</span>
         <span class="ts">${esc(step.timestamp_start)}–${esc(step.timestamp_end)}</span></div>
       <div class="goal">${esc(step.goal || "")}</div>
       <ul class="points">${points}</ul>

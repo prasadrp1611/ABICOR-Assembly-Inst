@@ -280,8 +280,9 @@ def ontology_png(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/highlight")
-def highlight(job_id: str, step: int, mode: str = "box"):
-    """Locate & highlight the step's components in its frame (lazy, cached)."""
+def highlight(job_id: str, step: int, mode: str = "box", label: str = "", frame: str = ""):
+    """Locate & highlight a step's parts in its frame (lazy, cached).
+    label: highlight only this part (else all). frame: source frame filename."""
     mode = mode if mode in ("box", "sam") else "box"
     data = _load_result(job_id)
     job_dir = config.JOBS_DIR / job_id
@@ -294,19 +295,39 @@ def highlight(job_id: str, step: int, mode: str = "box"):
     if not target:
         raise HTTPException(404, "step not found")
 
-    src = frames / f"step_{step:02d}.jpg"
+    src = frames / (Path(frame).name if frame else f"step_{step:02d}.jpg")
+    if not src.exists():
+        src = frames / f"step_{step:02d}.jpg"
     if not src.exists():
         raise HTTPException(404, "frame not found")
-    out = frames / f"step_{step:02d}_hl_{mode}.jpg"
 
-    labels = [c["name"] for c in target.get("components", [])]
-    labels += target.get("tools", [])
+    if label:
+        labels = [label]
+    else:
+        labels = [c["name"] for c in target.get("components", [])] + target.get("tools", [])
+
+    slug = "".join(c for c in label if c.isalnum())[:14] or "all"
+    out = frames / f"{src.stem}_hl_{mode}_{slug}.jpg"
     client = config.get_client()
     res = vision.highlight(client, str(src), labels, mode, str(out))
     return {"url": f"/api/jobs/{job_id}/frames/{out.name}",
             "detections": res.get("detections", []),
             "count": len(res.get("detections", [])),
-            "mode": res.get("mode", mode)}
+            "mode": res.get("mode", mode),
+            "backend": sam_backend.active_kind() if mode == "sam" else "box"}
+
+
+@app.get("/api/jobs/{job_id}/video")
+def serve_video(job_id: str):
+    """Serve the source video (Range-enabled) for per-section snippet playback."""
+    data = _load_result(job_id)
+    fp = config.JOBS_DIR / job_id / data["source"]["video_file"]
+    if not fp.exists():
+        raise HTTPException(404, "video not found")
+    ext = fp.suffix.lower()
+    media = "video/mp4" if ext in (".mp4", ".m4v") else \
+            "video/quicktime" if ext == ".mov" else "application/octet-stream"
+    return FileResponse(fp, media_type=media)
 
 
 # static assets (css/js) served under /static
