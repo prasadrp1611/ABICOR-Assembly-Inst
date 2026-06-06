@@ -75,26 +75,33 @@ def build_docx(model: dict, job_dir: Path, out_path: Path):
     sec.top_margin = Mm(14); sec.bottom_margin = Mm(26)
     sec.left_margin = Mm(18); sec.right_margin = Mm(18)
 
-    # ---- header block (title + logo) ----
+    # ---- header block (title + logo) — all fields template-editable ----
     htab = doc.add_table(rows=1, cols=2); _no_borders(htab); _set_widths(htab, [120, 54])
     lc, rc = htab.rows[0].cells
-    p = lc.paragraphs[0]; _run(p, "BINZEL standard", bold=True, size=20)
+    p = lc.paragraphs[0]; _run(p, s.get("header_title") or "BINZEL standard", bold=True, size=20)
     rp = rc.paragraphs[0]; rp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    logo = ASSETS / "logo_header.png"
+    logo = None
+    if s.get("header_logo"):
+        cand = job_dir / "uploads" / Path(s["header_logo"]).name
+        if cand.exists():
+            logo = cand
+    if logo is None:
+        logo = ASSETS / "logo_header.png"
     if logo.exists():
         rp.add_run().add_picture(str(logo), width=Mm(46))
 
     _run(doc.add_paragraph(), "Description", size=8)
 
     bar = doc.add_paragraph(); _shade(bar)
-    _run(bar, "Assembly instruction", bold=True, size=12)
+    _run(bar, s.get("doc_title") or "Assembly instruction", bold=True, size=12)
     sub = doc.add_paragraph(); _shade(sub)
-    _run(sub, "Montageanweisung\n", bold=True, size=8)
+    if s.get("doc_subtitle"):
+        _run(sub, s["doc_subtitle"] + "\n", bold=True, size=8)
     _run(sub, s.get("product_name", "") or s.get("model", ""), bold=True, size=8)
 
     idp = doc.add_paragraph()
-    _run(idp, f"ID-Nummer / ID-Number:  {s.get('id_number','')}", size=9)
-    mro = doc.add_paragraph(); _shade(mro); _run(mro, "MRO.", bold=True, size=12)
+    _run(idp, f"ID-Nummer / ID-Number:  {s.get('document_no') or s.get('id_number','')}", size=9)
+    mro = doc.add_paragraph(); _shade(mro); _run(mro, s.get("mro_label") or "MRO.", bold=True, size=12)
 
     st_title = doc.add_paragraph(); st_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _run(st_title, s.get("station_title", "Station 1: Final Assembly"),
@@ -163,7 +170,7 @@ def _build_footer(doc, s):
     _run(c1.paragraphs[0], "Date of issue", size=6)
     _run(c1.add_paragraph(), s.get("date", ""), bold=True, size=7)
     _run(c2.paragraphs[0], "Document no.", size=6)
-    _run(c2.add_paragraph(), s.get("id_number", ""), bold=True, size=7)
+    _run(c2.add_paragraph(), s.get("document_no") or s.get("id_number", ""), bold=True, size=7)
     logo = ASSETS / "logo_footer.png"
     if logo.exists():
         c3.paragraphs[0].add_run().add_picture(str(logo), width=Mm(26))

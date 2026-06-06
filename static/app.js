@@ -153,6 +153,7 @@ async function doRerun() {
 let resultData = null;
 const chosenFrame = {};    // step -> picked frame filename, or null = video snippet
 const currentImage = {};   // step -> filename currently displayed (frame OR segmented), null = video
+let templateSettings = null;   // editable Word-template fields
 
 const secOf = (ts) => {
   const p = String(ts).split(":").map(Number);
@@ -165,6 +166,7 @@ const frameURL = (name) => name && name.startsWith("up_")
 
 async function showResult() {
   resultData = await (await fetch(`/api/jobs/${currentJob}/result`)).json();
+  templateSettings = null;
   $("#progress-card").classList.add("hidden");
   const root = $("#result");
   root.classList.remove("hidden");
@@ -174,7 +176,7 @@ async function showResult() {
     download(`${(resultData.product.model || "assembly").replace(/\s+/g, "_")}.json`, resultData));
   $("#new-job").addEventListener("click", () => location.reload());
   $("#toggle-edit").addEventListener("click", toggleEdit);
-  $("#export-docx").addEventListener("click", exportWord);
+  $("#export-docx").addEventListener("click", openTemplate);
 
   // refine & rerun
   $("#toggle-refine").addEventListener("click", () => $("#refine").classList.toggle("hidden"));
@@ -345,18 +347,63 @@ function buildExportModel() {
       parts: (s.components || []).filter((c) => c.part_id).map((c) => ({ name: c.name, part_no: c.part_id })),
     });
   }));
+  return { settings: { ...(templateSettings || defaultTemplate()) }, steps };
+}
+
+// ---- editable Word template ----
+function defaultTemplate() {
+  const d = resultData;
   return {
-    settings: {
-      product_name: d.product.name, model: d.product.model, id_number: d.product.id_number,
-      station_title: (d.stations[0] && d.stations[0].station_title) || "Station 1: Final Assembly",
-      bilingual: false, include_goal: true, include_narration: false, include_part_ids: true,
-      date: new Date().toLocaleDateString("de-DE"), drawn_by: "AI Documentation Engine",
-    }, steps,
+    header_title: "BINZEL standard", doc_title: "Assembly instruction",
+    doc_subtitle: "Montageanweisung", mro_label: "MRO.",
+    product_name: d.product.name || "", model: d.product.model || "",
+    id_number: d.product.id_number || "", document_no: d.product.id_number || "",
+    station_title: (d.stations[0] && d.stations[0].station_title) || "Station 1: Final Assembly",
+    drawn_by: "AI Documentation Engine", date: new Date().toLocaleDateString("de-DE"),
+    bilingual: false, include_goal: true, include_narration: false, include_part_ids: true,
+    header_logo: "",
   };
+}
+function openTemplate() {
+  if (!templateSettings) templateSettings = defaultTemplate();
+  const s = templateSettings;
+  const set = (id, v) => { $(id).value = v == null ? "" : v; };
+  set("#t-header-title", s.header_title); set("#t-doc-title", s.doc_title);
+  set("#t-doc-sub", s.doc_subtitle); set("#t-mro", s.mro_label);
+  set("#t-product", s.product_name); set("#t-model", s.model);
+  set("#t-docno", s.document_no); set("#t-station", s.station_title);
+  set("#t-drawnby", s.drawn_by); set("#t-date", s.date);
+  $("#t-goal").checked = s.include_goal; $("#t-parts").checked = s.include_part_ids;
+  $("#t-narr").checked = s.include_narration; $("#t-biling").checked = s.bilingual;
+  $("#tmpl-modal").classList.remove("hidden");
+}
+function readTemplate() {
+  const s = templateSettings || (templateSettings = defaultTemplate());
+  s.header_title = $("#t-header-title").value; s.doc_title = $("#t-doc-title").value;
+  s.doc_subtitle = $("#t-doc-sub").value; s.mro_label = $("#t-mro").value;
+  s.product_name = $("#t-product").value; s.model = $("#t-model").value;
+  s.document_no = s.id_number = $("#t-docno").value; s.station_title = $("#t-station").value;
+  s.drawn_by = $("#t-drawnby").value; s.date = $("#t-date").value;
+  s.include_goal = $("#t-goal").checked; s.include_part_ids = $("#t-parts").checked;
+  s.include_narration = $("#t-narr").checked; s.bilingual = $("#t-biling").checked;
+  return s;
+}
+async function templateGenerate() {
+  readTemplate();
+  const f = $("#t-logo").files[0];
+  if (f) {
+    try {
+      const fd = new FormData(); fd.append("image", f);
+      const d = await (await fetch(`/api/jobs/${currentJob}/images`, { method: "POST", body: fd })).json();
+      templateSettings.header_logo = d.name;
+    } catch (e) {}
+  }
+  $("#tmpl-modal").classList.add("hidden");
+  await exportWord();
 }
 
 async function exportWord() {
-  const btn = $("#export-docx"); btn.disabled = true; btn.textContent = "Building…";
+  const btn = $("#tmpl-gen"); if (btn) { btn.disabled = true; btn.textContent = "Building…"; }
   try {
     const r = await fetch(`/api/jobs/${currentJob}/export`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -366,10 +413,11 @@ async function exportWord() {
     const blob = await r.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = (resultData.product.model || "assembly_instruction").replace(/\s+/g, "_") + ".docx";
+    a.download = ((templateSettings && templateSettings.model) || resultData.product.model
+      || "assembly_instruction").replace(/\s+/g, "_") + ".docx";
     a.click(); URL.revokeObjectURL(a.href);
   } catch (e) { alert("Export failed: " + e.message); }
-  btn.disabled = false; btn.textContent = "⬇ Export Word";
+  if (btn) { btn.disabled = false; btn.textContent = "⬇ Generate .docx"; }
 }
 
 function renderDoc(d) {
@@ -539,6 +587,12 @@ function closeSettings() { $("#settings").classList.add("hidden"); }
 $("#open-settings").addEventListener("click", openSettings);
 $("#settings-close").addEventListener("click", closeSettings);
 $("#settings").addEventListener("click", (e) => { if (e.target.id === "settings") closeSettings(); });
+
+// template editor modal (elements always present in the DOM)
+$("#tmpl-close").addEventListener("click", () => $("#tmpl-modal").classList.add("hidden"));
+$("#tmpl-modal").addEventListener("click", (e) => { if (e.target.id === "tmpl-modal") $("#tmpl-modal").classList.add("hidden"); });
+$("#tmpl-reset").addEventListener("click", () => { templateSettings = defaultTemplate(); openTemplate(); });
+$("#tmpl-gen").addEventListener("click", templateGenerate);
 
 $("#save-key").addEventListener("click", async () => {
   const key = $("#api-key").value.trim();

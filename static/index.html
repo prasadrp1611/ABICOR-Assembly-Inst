@@ -103,6 +103,38 @@
   </div>
 </div>
 
+<!-- Word template editor -->
+<div class="modal hidden" id="tmpl-modal">
+  <div class="modal-box tmpl-box">
+    <div class="modal-head"><b>Edit Word template</b><button class="x" id="tmpl-close">✕</button></div>
+    <p class="muted small">Customise the document before export. Fields map to the
+      header, title block and footer of the generated <code>.docx</code>.</p>
+    <div class="tmpl-grid">
+      <label>Header title<input id="t-header-title"/></label>
+      <label>Document title<input id="t-doc-title"/></label>
+      <label>Subtitle<input id="t-doc-sub"/></label>
+      <label>MRO label<input id="t-mro"/></label>
+      <label>Product name<input id="t-product"/></label>
+      <label>Model<input id="t-model"/></label>
+      <label>ID / Document no.<input id="t-docno"/></label>
+      <label>Station title<input id="t-station"/></label>
+      <label>Drawn by<input id="t-drawnby"/></label>
+      <label>Date<input id="t-date"/></label>
+      <label class="tmpl-wide">Header logo (optional)<input type="file" id="t-logo" accept="image/*"/></label>
+    </div>
+    <div class="tmpl-toggles">
+      <label><input type="checkbox" id="t-goal"/> Step goal</label>
+      <label><input type="checkbox" id="t-parts"/> Part IDs</label>
+      <label><input type="checkbox" id="t-narr"/> English narration</label>
+      <label><input type="checkbox" id="t-biling"/> Original-language narration</label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="tmpl-reset">Reset</button>
+      <button class="btn-primary" id="tmpl-gen">⬇ Generate .docx</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>
