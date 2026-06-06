@@ -51,6 +51,16 @@
         <input type="text" id="product_model" placeholder="Model e.g. EX-TRAFIRE 30H (optional)"/>
         <input type="text" id="product_id"    placeholder="ID-Number (optional)"/>
       </div>
+      <label class="chunk-row">
+        <span>Long video?</span>
+        <select id="chunk_minutes">
+          <option value="0">Auto (split if &gt; 15 min)</option>
+          <option value="5">Split into 5-min parts</option>
+          <option value="10">Split into 10-min parts</option>
+          <option value="15">Split into 15-min parts</option>
+        </select>
+        <span class="muted">splits a 1-hour video into smaller parts for reliable parsing</span>
+      </label>
 
       <button type="submit" id="go" class="btn-primary">Generate</button>
     </form>

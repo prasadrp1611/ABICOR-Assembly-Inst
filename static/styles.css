@@ -71,6 +71,11 @@ main{max-width:1060px;margin:26px auto;padding:0 20px;
 .fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px}
 .fields input{padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-size:14px}
 .fields input:focus{outline:none;border-color:var(--magenta)}
+.chunk-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:13px;flex-wrap:wrap}
+.chunk-row>span:first-child{font-weight:600}
+.chunk-row select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+.chunk-row select:focus{outline:none;border-color:var(--magenta)}
+
 .btn-primary{background:var(--magenta);color:#fff;border:0;border-radius:10px;
   padding:13px 26px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s}
 .btn-primary:hover{background:var(--magenta-d)}

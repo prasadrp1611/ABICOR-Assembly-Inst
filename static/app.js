@@ -53,6 +53,7 @@ $("#job-form").addEventListener("submit", async (e) => {
   fd.append("product_name", $("#product_name").value);
   fd.append("product_model", $("#product_model").value);
   fd.append("product_id", $("#product_id").value);
+  fd.append("chunk_minutes", $("#chunk_minutes").value);
 
   $("#go").disabled = true;
   $("#go").textContent = "Uploading…";
@@ -74,7 +75,8 @@ $("#job-form").addEventListener("submit", async (e) => {
 
 // ---- poll status ----
 const STAGES = {
-  queued: "Queued", uploading: "Ingesting media",
+  queued: "Queued", chunking: "Splitting long video into parts",
+  uploading: "Ingesting media",
   analyzing: "Perceiving the procedure (multimodal AI)",
   validating: "Structuring & validating steps", extracting_frames: "Extracting key frames",
   matching_parts: "Cross-referencing part catalogue", ontology: "Mapping the part ontology",

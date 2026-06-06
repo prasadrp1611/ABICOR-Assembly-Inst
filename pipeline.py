@@ -11,6 +11,7 @@ import jsonschema
 from google.genai import types
 
 import config
+import chunking
 from schema import (AssemblyDocument, SYSTEM_PROMPT, USER_INSTRUCTION,
                     SCHEMA_VERSION)
 
@@ -88,6 +89,65 @@ def analyze_video(client, video_path: str, progress) -> dict:
     progress(stage="validating", progress=55, message="Structuring & validating steps…")
     jsonschema.validate(instance=data, schema=AssemblyDocument.model_json_schema())
     return data, vfile
+
+
+def merge_chunk_docs(chunk_results: list, full_duration: float) -> dict:
+    """Merge per-part documents: absolute timestamps + continuous step numbering."""
+    base = chunk_results[0][1]
+    merged = {
+        "schema_version": SCHEMA_VERSION,
+        "product": base["product"],
+        "source": dict(base["source"]),
+        "summary": "",
+        "stations": [],
+    }
+    merged["source"]["duration"] = chunking.sec_to_mmss(full_duration)
+    gstep, summaries = 1, []
+    for meta, data in chunk_results:
+        S = meta["start"]
+        steps = []
+        for st in data["stations"]:
+            for step in st["steps"]:
+                ts = S + ts_to_seconds(step["timestamp_start"])
+                te = S + ts_to_seconds(step.get("timestamp_end") or step["timestamp_start"])
+                step["timestamp_start"] = chunking.sec_to_mmss(ts)
+                step["timestamp_end"] = chunking.sec_to_mmss(min(te, full_duration))
+                step["step_number"] = gstep
+                step["frame_image"] = f"step_{gstep:02d}.jpg"
+                steps.append(step)
+                gstep += 1
+        merged["stations"].append({
+            "station_number": meta["index"] + 1,
+            "station_title": f"Part {meta['index'] + 1}  "
+                             f"({chunking.sec_to_mmss(meta['start'])}–{chunking.sec_to_mmss(meta['end'])})",
+            "steps": steps,
+        })
+        if data.get("summary"):
+            summaries.append(data["summary"])
+    merged["summary"] = " ".join(summaries)[:1500] or base.get("summary", "")
+    return merged
+
+
+def process_chunked(client, video_path: str, job_dir: Path, progress,
+                    chunk_minutes: float, duration: float) -> dict:
+    clips_dir = job_dir / "chunks"
+    clips_dir.mkdir(exist_ok=True)
+    plan = chunking.plan_chunks(duration, chunk_minutes)
+    progress(stage="chunking", progress=12,
+             message=f"Splitting the video into {len(plan)} parts…")
+    results = []
+    for c in plan:
+        clip = clips_dir / f"part_{c['index']:02d}.mp4"
+        chunking.split_clip(video_path, str(clip), c["start"], c["end"])
+        progress(stage="analyzing",
+                 progress=18 + int(60 * c["index"] / max(1, len(plan))),
+                 message=f"Analysing part {c['index'] + 1} of {len(plan)}…")
+        data, _ = analyze_video(client, str(clip), progress)
+        results.append((c, data))
+    merged = merge_chunk_docs(results, duration)
+    merged["source"]["video_file"] = os.path.basename(video_path)
+    merged["chunked"] = {"parts": len(plan), "chunk_minutes": chunk_minutes}
+    return merged
 
 
 def extract_all_frames(video_path: str, data: dict, frames_dir: Path, progress):
@@ -178,7 +238,18 @@ def process_job(job_id: str, options: dict):
         client = config.get_client()
         video_path = str(job_dir / options["video_filename"])
 
-        data, vfile = analyze_video(client, video_path, progress)
+        duration = chunking.get_duration(video_path)
+        chunk_minutes = float(options.get("chunk_minutes") or 0)
+        # auto-chunk long videos (>15 min) into 10-min parts unless told otherwise
+        auto = chunk_minutes <= 0 and duration > 15 * 60
+        use_chunks = chunk_minutes > 0 or auto
+        vfile = None
+
+        if use_chunks:
+            cm = chunk_minutes if chunk_minutes > 0 else 10
+            data = process_chunked(client, video_path, job_dir, progress, cm, duration)
+        else:
+            data, vfile = analyze_video(client, video_path, progress)
 
         # apply user-provided product overrides
         for k in ("name", "model", "id_number"):
@@ -193,17 +264,20 @@ def process_job(job_id: str, options: dict):
             data = match_parts(client, data, parts, progress)
 
         # ontology / knowledge graph (supplementary — never fails the job)
-        try:
-            progress(stage="ontology", progress=92, message="Mapping the part ontology…")
-            import ontology as onto_mod
-            onto = onto_mod.extract_ontology(client, vfile)
-            (job_dir / "ontology.json").write_text(
-                json.dumps(onto, indent=2, ensure_ascii=False), encoding="utf-8")
-            label = data["product"]["model"] or data["product"]["name"] or "Assembly"
-            onto_mod.render_graph(onto, job_dir / "ontology.png", title=f"{label} — Ontology")
-            data["ontology_summary"] = onto_mod.summarize(onto)
-        except Exception as oe:
-            data["ontology_summary"] = {"error": str(oe)[:140]}
+        if vfile is not None:
+            try:
+                progress(stage="ontology", progress=92, message="Mapping the part ontology…")
+                import ontology as onto_mod
+                onto = onto_mod.extract_ontology(client, vfile)
+                (job_dir / "ontology.json").write_text(
+                    json.dumps(onto, indent=2, ensure_ascii=False), encoding="utf-8")
+                label = data["product"]["model"] or data["product"]["name"] or "Assembly"
+                onto_mod.render_graph(onto, job_dir / "ontology.png", title=f"{label} — Ontology")
+                data["ontology_summary"] = onto_mod.summarize(onto)
+            except Exception as oe:
+                data["ontology_summary"] = {"error": str(oe)[:140]}
+        else:
+            data["ontology_summary"] = {"note": "ontology skipped for chunked long videos"}
 
         (job_dir / "assembly.json").write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -29,6 +29,9 @@ against a spare-parts PDF.
   masks via HuggingFace SAM, prompted by the engine's box). SAM is optional:
   `pip install -r requirements-sam.txt`.
 - **In-app key:** paste your API key in the Settings dialog at runtime — no `.env` edit needed.
+- **Long-video chunking:** a 1-hour tutorial is split into smaller time windows
+  (`chunking.py`), each parsed independently, then merged back into one document
+  with absolute timestamps and continuous step numbering (one station per part).
 - **Ontology:** an auto-extracted knowledge graph (parts/tools/actions + typed
   relationships) rendered as a diagram.
 - **Word editor:** an in-browser editor (`/editor`) to refine text, choose/upload

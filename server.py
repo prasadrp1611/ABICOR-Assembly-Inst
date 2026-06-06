@@ -77,6 +77,7 @@ async def create_job(
     product_name: str = Form(""),
     product_model: str = Form(""),
     product_id: str = Form(""),
+    chunk_minutes: float = Form(0),
 ):
     if not config.has_key():
         raise HTTPException(400, "API key not configured. Open Settings and add your key.")
@@ -94,6 +95,7 @@ async def create_job(
         "product_name": product_name.strip(),
         "product_model": product_model.strip(),
         "product_id": product_id.strip(),
+        "chunk_minutes": chunk_minutes,
     }
 
     # optional parts PDF
