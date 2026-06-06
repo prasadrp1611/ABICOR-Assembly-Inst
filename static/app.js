@@ -932,22 +932,41 @@ async function openKnowledgeGraph() {
   }));
   const edges = d.edges.map((e) => ({ from: e.source, to: e.target, label: e.predicate }));
   if (kgNet) kgNet.destroy();
-  kgNet = new vis.Network($("#kg-canvas"),
-    { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
-    {
-      nodes: { shape: "dot", scaling: { min: 8, max: 42 },
-        font: { color: "#e8e8f0", size: 13, strokeWidth: 3, strokeColor: "#0e0c16" } },
-      edges: { color: { color: "#56546e", highlight: "#C1006F" }, width: 0.6,
-        font: { color: "#8a87a0", size: 9, strokeWidth: 0 },
-        smooth: { type: "continuous" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
-      physics: { stabilization: { iterations: 160 },
-        barnesHut: { gravitationalConstant: -9000, springLength: 130, springConstant: 0.03 } },
-      interaction: { hover: true, tooltipDelay: 120 },
-    });
+  try {
+    kgNet = new vis.Network($("#kg-canvas"),
+      { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
+      {
+        nodes: { shape: "dot", scaling: { min: 8, max: 42 },
+          font: { color: "#e8e8f0", size: 13, strokeWidth: 3, strokeColor: "#0e0c16" } },
+        edges: { color: { color: "#56546e", highlight: "#C1006F" }, width: 0.6,
+          font: { color: "#8a87a0", size: 9, strokeWidth: 0 },
+          smooth: { type: "continuous" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
+        physics: { stabilization: { iterations: 160 },
+          barnesHut: { gravitationalConstant: -9000, springLength: 130, springConstant: 0.03 } },
+        interaction: { hover: true, tooltipDelay: 120 },
+      });
+    kgNet.once("stabilizationIterationsDone", () => kgNet && kgNet.fit({ animation: false }));
+  } catch (err) {
+    $("#kg-stats").textContent = " · render error: " + (err.message || err);
+  }
 }
 function closeKnowledgeGraph() {
   $("#kg-modal").classList.add("hidden");
   if (kgNet) { kgNet.destroy(); kgNet = null; }
+}
+
+// ---- auto-hiding "peek" footer + collapsible sidebar ----
+let _footTimer;
+function peekFooter() {
+  const f = document.querySelector(".foot");
+  if (!f) return;
+  f.classList.remove("hide");
+  clearTimeout(_footTimer);
+  _footTimer = setTimeout(() => f.classList.add("hide"), 4500);   // show, then slide away
+}
+function toggleSidebar() {
+  const collapsed = document.body.classList.toggle("sb-collapsed");
+  localStorage.setItem("abicor_sb_collapsed", collapsed ? "1" : "");
 }
 
 async function boot() {
@@ -980,6 +999,10 @@ async function boot() {
   $("#sb-graph") && $("#sb-graph").addEventListener("click", openKnowledgeGraph);
   $("#kg-close") && $("#kg-close").addEventListener("click", closeKnowledgeGraph);
   $("#sb-sort") && $("#sb-sort").addEventListener("change", loadSessions);
+  $("#sb-toggle") && $("#sb-toggle").addEventListener("click", toggleSidebar);
+  if (localStorage.getItem("abicor_sb_collapsed")) document.body.classList.add("sb-collapsed");
+  window.addEventListener("scroll", peekFooter, { passive: true });
+  peekFooter();
   if (!CONFIGURED) openSettings();
 }
 boot();
