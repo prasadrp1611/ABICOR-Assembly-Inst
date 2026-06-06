@@ -87,6 +87,12 @@ main{max-width:1060px;margin:26px auto;padding:0 20px;
 .btn-primary:disabled{opacity:.5;cursor:not-allowed}
 
 /* progress */
+#progress-card{text-align:center}
+.loading-logo{width:200px;height:200px;border-radius:50%;display:block;margin:6px auto 16px;
+  box-shadow:0 8px 30px rgba(0,0,0,.18);animation:logospin 3.2s linear infinite}
+@keyframes logospin{to{transform:rotate(360deg)}}
+#progress-card h2{text-align:center}
+#progress-card .stage-list{display:inline-block;text-align:left}
 .bar{height:10px;background:var(--chip);border-radius:6px;overflow:hidden}
 .bar-fill{height:100%;width:0;background:linear-gradient(90deg,var(--magenta),#ff4fb0);
   transition:width .4s}
