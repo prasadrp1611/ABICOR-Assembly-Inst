@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ABICOR · Assembly-Doc Generator</title>
+<link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-mark">◗</span>
+    <div>
+      <div class="brand-title">ABICOR BINZEL</div>
+      <div class="brand-sub">Assembly-Doc Generator</div>
+    </div>
+  </div>
+  <div class="brand-note">Video&nbsp;→&nbsp;deterministic assembly instructions</div>
+</header>
+
+<main>
+  <!-- UPLOAD -->
+  <section id="upload-card" class="card">
+    <h1>Generate an assembly document</h1>
+    <p class="muted">Upload a welder's tutorial video. Optionally add the official
+      spare-parts PDF to auto-match Part IDs. Our multimodal AI engine extracts
+      time-stamped, point-wise steps with grounded references and a frame per step.</p>
+
+    <form id="job-form">
+      <div class="grid">
+        <div class="drop" id="video-drop" role="button" tabindex="0">
+          <input type="file" id="video" name="video" accept="video/*" hidden/>
+          <span class="drop-icon">🎬</span>
+          <span class="drop-main">Choose tutorial video</span>
+          <span class="drop-sub" id="video-name">drag &amp; drop or click · mp4 · mov</span>
+        </div>
+
+        <div class="drop" id="pdf-drop" role="button" tabindex="0">
+          <input type="file" id="parts_pdf" name="parts_pdf" accept="application/pdf" hidden/>
+          <span class="drop-icon">📄</span>
+          <span class="drop-main">Spare-parts PDF</span>
+          <span class="drop-sub" id="pdf-name">optional · enables Part-ID matching</span>
+        </div>
+      </div>
+
+      <div class="fields">
+        <input type="text" id="product_name"  placeholder="Product name (optional)"/>
+        <input type="text" id="product_model" placeholder="Model e.g. EX-TRAFIRE 30H (optional)"/>
+        <input type="text" id="product_id"    placeholder="ID-Number (optional)"/>
+      </div>
+
+      <button type="submit" id="go" class="btn-primary">Generate</button>
+    </form>
+  </section>
+
+  <!-- PROGRESS -->
+  <section id="progress-card" class="card hidden">
+    <h2>Processing…</h2>
+    <div class="bar"><div class="bar-fill" id="bar"></div></div>
+    <div class="stage" id="stage-msg">Queued…</div>
+    <ul class="stage-list" id="stage-list"></ul>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="result" class="hidden"></section>
+</main>
+
+<footer class="foot">
+  Powered by a proprietary multimodal AI engine · deterministic, schema-validated output
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

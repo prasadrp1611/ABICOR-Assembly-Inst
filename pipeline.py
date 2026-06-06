@@ -1,0 +1,225 @@
+"""
+Core processing pipeline: video -> deterministic JSON -> frames -> part-ID matching.
+Each job is a directory under jobs/<id>/ containing input + outputs + status.json.
+"""
+import os, json, time, traceback
+from pathlib import Path
+
+import numpy as np
+import cv2
+import jsonschema
+from google.genai import types
+
+import config
+from schema import (AssemblyDocument, SYSTEM_PROMPT, USER_INSTRUCTION,
+                    SCHEMA_VERSION)
+
+
+# --------------------------------------------------------------------------- utils
+def ts_to_seconds(ts: str) -> float:
+    parts = [int(p) for p in str(ts).split(":")]
+    if len(parts) == 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    if len(parts) == 2: return parts[0] * 60 + parts[1]
+    return float(parts[0])
+
+
+def extract_frame(video_path: str, seconds: float, out_path: str) -> bool:
+    cap = cv2.VideoCapture(video_path)
+    cap.set(cv2.CAP_PROP_POS_MSEC, seconds * 1000)
+    ok, frame = cap.read()
+    cap.release()
+    if ok:
+        cv2.imwrite(out_path, frame)
+        return True
+    return False
+
+
+def _cos(a, b) -> float:
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
+# --------------------------------------------------------------------------- status
+def write_status(job_dir: Path, **fields):
+    sf = job_dir / "status.json"
+    cur = {}
+    if sf.exists():
+        cur = json.loads(sf.read_text(encoding="utf-8"))
+    cur.update(fields)
+    sf.write_text(json.dumps(cur, indent=2, ensure_ascii=False), encoding="utf-8")
+    return cur
+
+
+# --------------------------------------------------------------------------- stages
+def analyze_video(client, video_path: str, progress) -> dict:
+    progress(stage="uploading", progress=10,
+             message="Ingesting media…")
+    vfile = client.files.upload(file=video_path)
+    while vfile.state.name == "PROCESSING":
+        time.sleep(4)
+        vfile = client.files.get(name=vfile.name)
+    if vfile.state.name == "FAILED":
+        raise RuntimeError("media processing failed")
+
+    progress(stage="analyzing", progress=35,
+             message="Multimodal engine analysing the procedure…")
+    resp = client.models.generate_content(
+        model=config.MODEL,
+        contents=[vfile, USER_INSTRUCTION],
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            temperature=config.TEMPERATURE,
+            seed=config.SEED,
+            response_mime_type="application/json",
+            response_schema=AssemblyDocument,
+        ),
+    )
+    doc: AssemblyDocument = resp.parsed
+    if doc is None:
+        raise RuntimeError("the AI engine returned no structured result")
+    data = doc.model_dump()
+
+    # deterministic post-processing
+    data["schema_version"] = SCHEMA_VERSION
+    data["source"]["video_file"] = os.path.basename(video_path)
+    for st in data["stations"]:
+        for step in st["steps"]:
+            step["frame_image"] = f"step_{step['step_number']:02d}.jpg"
+
+    progress(stage="validating", progress=55, message="Structuring & validating steps…")
+    jsonschema.validate(instance=data, schema=AssemblyDocument.model_json_schema())
+    return data, vfile
+
+
+def extract_all_frames(video_path: str, data: dict, frames_dir: Path, progress):
+    progress(stage="extracting_frames", progress=65,
+             message="Extracting a frame for each step…")
+    frames_dir.mkdir(exist_ok=True)
+    for st in data["stations"]:
+        for step in st["steps"]:
+            secs = ts_to_seconds(step["timestamp_start"])
+            extract_frame(video_path, secs, str(frames_dir / step["frame_image"]))
+
+
+def extract_parts_table(client, pdf_path: str) -> list:
+    pf = client.files.upload(file=pdf_path)
+    while pf.state.name == "PROCESSING":
+        time.sleep(2)
+        pf = client.files.get(name=pf.name)
+    prompt = (
+        "This PDF is an official spare-parts list (exploded view + parts table). "
+        "Extract the COMPLETE parts table. For every row return item (string), "
+        "part_no (exact), description. Return ONLY JSON: "
+        '{"parts":[{"item":"...","part_no":"...","description":"..."}]}'
+    )
+    r = client.models.generate_content(
+        model=config.MODEL, contents=[pf, prompt],
+        config=types.GenerateContentConfig(temperature=0, seed=config.SEED,
+                                            response_mime_type="application/json"),
+    )
+    t = r.text
+    if "```json" in t: t = t.split("```json")[1].split("```")[0].strip()
+    elif "```" in t:   t = t.split("```")[1].split("```")[0].strip()
+    return json.loads(t).get("parts", [])
+
+
+def match_parts(client, data: dict, parts: list, progress):
+    """Embed official parts + components, assign best Part ID by cosine similarity."""
+    progress(stage="matching_parts", progress=80,
+             message=f"Matching components to {len(parts)} official part IDs…")
+
+    def embed(text):
+        r = client.models.embed_content(model=config.EMBED_MODEL, contents=text)
+        return np.array(r.embeddings[0].values)
+
+    part_vecs = [(p, embed(f"{p['description']} (welding machine spare part)"))
+                 for p in parts]
+
+    # cache component embeddings by name to avoid repeats
+    cache = {}
+    matched = 0
+    for st in data["stations"]:
+        for step in st["steps"]:
+            for comp in step["components"]:
+                name = comp["name"]
+                if name not in cache:
+                    cache[name] = embed(name)
+                q = cache[name]
+                best_p, best_s = None, -1.0
+                for p, v in part_vecs:
+                    s = _cos(q, v)
+                    if s > best_s:
+                        best_s, best_p = s, p
+                confident = best_s >= config.PART_MATCH_THRESHOLD
+                comp["part_match"] = {
+                    "item": best_p["item"],
+                    "part_no": best_p["part_no"],
+                    "official_name": best_p["description"],
+                    "confidence": round(best_s, 3),
+                    "confident": confident,
+                }
+                if confident:
+                    comp["part_id"] = best_p["part_no"]
+                    matched += 1
+    data["parts_matched"] = matched
+    data["official_parts"] = parts
+    return data
+
+
+# --------------------------------------------------------------------------- driver
+def process_job(job_id: str, options: dict):
+    job_dir = config.JOBS_DIR / job_id
+    frames_dir = job_dir / "frames"
+
+    def progress(**f):
+        f.setdefault("status", "processing")
+        write_status(job_dir, **f)
+
+    try:
+        client = config.get_client()
+        video_path = str(job_dir / options["video_filename"])
+
+        data, vfile = analyze_video(client, video_path, progress)
+
+        # apply user-provided product overrides
+        for k in ("name", "model", "id_number"):
+            if options.get(f"product_{k}"):
+                data["product"][k] = options[f"product_{k}"]
+
+        extract_all_frames(video_path, data, frames_dir, progress)
+
+        parts_pdf = options.get("parts_filename")
+        if parts_pdf:
+            parts = extract_parts_table(client, str(job_dir / parts_pdf))
+            data = match_parts(client, data, parts, progress)
+
+        # ontology / knowledge graph (supplementary — never fails the job)
+        try:
+            progress(stage="ontology", progress=92, message="Mapping the part ontology…")
+            import ontology as onto_mod
+            onto = onto_mod.extract_ontology(client, vfile)
+            (job_dir / "ontology.json").write_text(
+                json.dumps(onto, indent=2, ensure_ascii=False), encoding="utf-8")
+            label = data["product"]["model"] or data["product"]["name"] or "Assembly"
+            onto_mod.render_graph(onto, job_dir / "ontology.png", title=f"{label} — Ontology")
+            data["ontology_summary"] = onto_mod.summarize(onto)
+        except Exception as oe:
+            data["ontology_summary"] = {"error": str(oe)[:140]}
+
+        (job_dir / "assembly.json").write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        n_steps = sum(len(s["steps"]) for s in data["stations"])
+        n_points = sum(len(st["instructions"])
+                       for s in data["stations"] for st in s["steps"])
+        write_status(
+            job_dir, status="done", stage="done", progress=100,
+            message="Assembly document ready.",
+            product=data["product"]["model"] or data["product"]["name"],
+            n_steps=n_steps, n_points=n_points,
+            parts_matched=data.get("parts_matched", 0),
+            finished_at=time.time(),
+        )
+    except Exception as e:
+        write_status(job_dir, status="error", stage="error", progress=100,
+                     message=f"{type(e).__name__}: {e}",
+                     traceback=traceback.format_exc())

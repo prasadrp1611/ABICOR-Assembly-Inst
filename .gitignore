@@ -1,0 +1,16 @@
+# secrets — never commit real keys
+.env
+
+# runtime job data (uploaded videos, frames, generated docs)
+jobs/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+
+# generated / temp office files
+*.docx
+~$*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ABICOR · Assembly Editor</title>
+<link rel="stylesheet" href="/static/styles.css"/>
+<link rel="stylesheet" href="/static/editor.css"/>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-mark">◗</span>
+    <div>
+      <div class="brand-title">ABICOR BINZEL</div>
+      <div class="brand-sub">Assembly Document Editor</div>
+    </div>
+  </div>
+  <div class="ed-actions">
+    <a class="btn-ghost" id="back" href="/">← Back</a>
+    <button class="btn-ghost" id="dl-json">⬇ JSON</button>
+    <button class="btn-primary" id="export">⬇ Export to Word (.docx)</button>
+  </div>
+</header>
+
+<main class="ed-main">
+  <aside class="ed-side">
+    <div class="card">
+      <h2>Document</h2>
+      <label class="fld">Product name<input id="s-name"/></label>
+      <label class="fld">Model<input id="s-model"/></label>
+      <label class="fld">ID-Number<input id="s-id"/></label>
+      <label class="fld">Station title<input id="s-station"/></label>
+      <hr/>
+      <h2>Include</h2>
+      <label class="chk"><input type="checkbox" id="t-goal" checked/> Step goal</label>
+      <label class="chk"><input type="checkbox" id="t-parts" checked/> Part IDs</label>
+      <label class="chk"><input type="checkbox" id="t-narr"/> English narration</label>
+      <label class="chk"><input type="checkbox" id="t-biling"/> Original-language narration</label>
+      <hr/>
+      <div class="muted small">Edit any text directly. Click a step image to
+        choose another frame or upload your own. Untick a step to leave it out
+        of the Word document.</div>
+    </div>
+  </aside>
+
+  <section class="ed-doc" id="doc">
+    <div class="loading" id="loading">Loading document…</div>
+  </section>
+</main>
+
+<!-- image picker modal -->
+<div class="modal hidden" id="picker">
+  <div class="modal-box">
+    <div class="modal-head">
+      <b>Choose an image for this step</b>
+      <button class="x" id="picker-close">✕</button>
+    </div>
+    <div class="opts" id="picker-opts">Extracting frames…</div>
+    <div class="modal-foot">
+      <label class="btn-ghost upload-btn">⬆ Upload your own
+        <input type="file" id="picker-upload" accept="image/*" hidden/></label>
+    </div>
+  </div>
+</div>
+
+<script src="/static/editor.js"></script>
+</body>
+</html>
