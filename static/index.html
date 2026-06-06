@@ -101,10 +101,10 @@
 <div class="modal hidden" id="settings">
   <div class="modal-box">
     <div class="modal-head">
-      <b>Connect the AI engine</b>
+      <b id="settings-title">Connect the AI engine</b>
       <button class="x" id="settings-close">✕</button>
     </div>
-    <p class="muted small">Paste your access key to enable the engine. It is stored
+    <p class="muted small" id="settings-help">Paste your access key to enable the engine. It is stored
       locally on this machine only and never shown again.</p>
     <input type="password" id="api-key" class="key-in" placeholder="Paste your API key…"/>
     <div id="key-status" class="key-status"></div>
@@ -153,5 +153,6 @@
 </div>
 
 <script src="/static/app.js"></script>
+<script src="/static/report.js"></script>
 </body>
 </html>

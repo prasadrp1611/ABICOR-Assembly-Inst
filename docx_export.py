@@ -113,7 +113,7 @@ def build_docx(model: dict, job_dir: Path, out_path: Path):
 
     # ---- steps ----
     for st in steps:
-        tab = doc.add_table(rows=1, cols=2); _no_borders(tab); _set_widths(tab, [104, 70])
+        tab = doc.add_table(rows=1, cols=2); _no_borders(tab); _set_widths(tab, [138, 36])
         tcell, icell = tab.rows[0].cells
 
         # text cell
@@ -140,7 +140,7 @@ def build_docx(model: dict, job_dir: Path, out_path: Path):
         ip = icell.paragraphs[0]; ip.alignment = WD_ALIGN_PARAGRAPH.CENTER
         img = _resolve_image(job_dir, st.get("image"))
         if img:
-            ip.add_run().add_picture(str(img), width=Mm(66))
+            ip.add_run().add_picture(str(img), width=Mm(30))
             cap = icell.add_paragraph(); cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
             _run(cap, f"Step {st['number']}", size=7, color=RGBColor(0x88,0x88,0x88))
 

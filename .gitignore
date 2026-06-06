@@ -1,6 +1,17 @@
 # secrets — never commit real keys
 .env
 
+# revocable access codes (operator-managed; contains code hashes)
+access_codes.json
+
+# key-vault runtime: handshake-token hashes, usage ledger, kill flag
+keyvault/tokens.json
+keyvault/usage.json
+keyvault/KILL
+
+# incident intake queue (user-reported problems for the support bot)
+incidents/
+
 # runtime job data (uploaded videos, frames, generated docs)
 jobs/
 

@@ -30,14 +30,28 @@ h2{font-size:19px;margin:0 0 14px}
 .fun.on{color:#ffe14d;text-shadow:0 0 10px #ffd000;animation:funpulse 1s infinite}
 @keyframes funpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.3)}}
 
-/* fun-mode floating video */
-.fun-video{position:fixed;bottom:18px;right:18px;width:440px;max-width:62vw;aspect-ratio:16/9;
-  z-index:75;border-radius:12px;overflow:hidden;background:#000;
-  box-shadow:0 14px 44px rgba(0,0,0,.55)}
-.fun-video iframe{width:100%;height:100%;border:0;display:block}
-.fun-video .fun-x{position:absolute;top:6px;right:6px;z-index:2;background:rgba(0,0,0,.6);
-  color:#fff;border:0;width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:13px}
-.fun-video .fun-x:hover{background:rgba(0,0,0,.85)}
+/* ===== FUN MODE: confetti + full party/dark theme (toggled by the subtle • dot) ===== */
+.confetti{position:fixed;top:-24px;z-index:300;border-radius:2px;pointer-events:none;
+  animation:confettifall 3.4s linear forwards}
+@keyframes confettifall{0%{opacity:1}to{transform:translateY(112vh) rotate(760deg);opacity:.25}}
+
+body.fun-mode{--bg:#08060f;--ink:#f1f1f8;--muted:#9aa0bd;--line:#23263a;--card:#11131f;--chip:#1b2034;
+  background:radial-gradient(1100px 560px at 80% -10%, #06223a, #08060f 55%),
+             radial-gradient(900px 500px at 10% 0%, #1a0738, #08060f 60%)}
+body.fun-mode .topbar{background:linear-gradient(90deg,#ff2db8,#7a00ff,#00e0c0,#ffd000,#ff2db8);
+  background-size:300% 100%;animation:funhue 5s linear infinite}
+@keyframes funhue{to{background-position:300% 0}}
+body.fun-mode h1,body.fun-mode h2,body.fun-mode .brand-title,body.fun-mode .station-title{
+  text-shadow:0 0 16px rgba(255,45,184,.55)}
+body.fun-mode .card,body.fun-mode .doc-head,body.fun-mode .step,body.fun-mode .onto-card,
+body.fun-mode .ed-doc{background:var(--card);border-color:#2a2e48;
+  box-shadow:0 0 0 1px rgba(0,224,192,.08),0 10px 40px rgba(122,0,255,.16)}
+body.fun-mode .btn-primary{background:linear-gradient(90deg,#ff2db8,#00e0c0)}
+body.fun-mode .btn-ghost{border-color:#ff2db8;color:#ff7ad1;background:#15101f}
+body.fun-mode .meta-chip,body.fun-mode .chip{background:#241d3a;color:#f3f1fa}
+body.fun-mode input,body.fun-mode select,body.fun-mode textarea{background:#1a1430;color:#f3f1fa;border-color:#3a3258}
+body.fun-mode .drop{background:#160f28;border-color:#3a3258}
+body.fun-mode .muted,body.fun-mode .foot{color:#a7a3c4}
 
 /* modal (shared) */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;

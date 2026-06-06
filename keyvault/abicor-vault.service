@@ -1,0 +1,19 @@
+[Unit]
+Description=ABICOR key-vault (Gemini handshake-token proxy)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/abicor/keyvault
+EnvironmentFile=/opt/abicor/keyvault/.env
+ExecStart=/opt/abicor/keyvault/.venv/bin/python vault.py
+Restart=always
+RestartSec=3
+# harden: vault only needs its own dir writable (tokens.json, usage.json, KILL)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/abicor/keyvault
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

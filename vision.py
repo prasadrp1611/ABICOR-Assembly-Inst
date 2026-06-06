@@ -75,8 +75,9 @@ def annotate(image_path: str, detections: list, out_path: str) -> dict:
         if x2 <= x1 or y2 <= y1:
             continue
         color = PALETTE[i % len(PALETTE)]
+        lw = max(3, int(round(w / 500)))      # bolder outline on high-res / printed frames
         cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 3)
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, lw)
         _label(img, d.get("label", "part"), x1, y1, color)
         drawn.append(d.get("label", "part"))
     cv2.addWeighted(overlay, 0.22, img, 0.78, 0, img)
@@ -163,11 +164,23 @@ def annotate_masks(image_path: str, items: list, out_path: str) -> dict:
 
 
 def _label(img, text, x1, y1, color):
-    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-    yt = max(th + 6, y1)
-    cv2.rectangle(img, (x1, yt - th - 8), (x1 + tw + 8, yt), color, -1)
-    cv2.putText(img, text, (x1 + 4, yt - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    # Labels get printed and read by people who may not have great eyesight, so
+    # the text scales with the image and sits on a high-contrast plate.
+    H, W = img.shape[:2]
+    scale = max(0.9, min(2.2, W / 1000.0))
+    thick = max(2, int(round(scale * 2)))
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+    pad = int(8 * scale)
+    yt = max(th + 2 * pad, y1)                         # keep the plate on-canvas
+    xl = max(0, min(x1, W - tw - 2 * pad - 1))
+    cv2.rectangle(img, (xl, yt - th - 2 * pad), (xl + tw + 2 * pad, yt), color, -1)
+    cv2.rectangle(img, (xl, yt - th - 2 * pad), (xl + tw + 2 * pad, yt), (30, 30, 30),
+                  max(1, thick // 2))                  # dark keyline for contrast
+    org = (xl + pad, yt - pad)
+    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0),
+                thick + 2, cv2.LINE_AA)                # black underlay …
+    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255),
+                thick, cv2.LINE_AA)                    # … then white text
 
 
 # ----------------------------------------------------------------- SAM mode

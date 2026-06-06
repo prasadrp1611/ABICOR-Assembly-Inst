@@ -5,37 +5,56 @@ let CONFIGURED = false;
 let SAM_AVAILABLE = false;
 let HL_MODE = "box";
 let lastInstructions = "";   // persists the refine/rerun prompt across re-renders
+let MODE = "byok";                                   // "gateway" (access codes) | "byok" (raw key)
+let ACCESS = localStorage.getItem("abicor_access") || "";   // revocable access code (gateway mode)
+// attach the access code to every gated request (no-op in byok mode)
+const authH = (extra) => Object.assign({}, extra || {}, ACCESS ? { "X-Access-Code": ACCESS } : {});
 
 // ---- fun mode (easter egg): the fun button swaps the main-page tutorial video
 //      for a meme video (in place) and plays the bing-bong mp3 as the soundtrack ----
 let FUN = false;
-const FUN_VIDEO_ID = "xRQnJyP77tY";
-const funAudio = new Audio("/static/funmode.mp3");   // keep the bing-bong music
-funAudio.loop = true;
-funAudio.volume = 0.85;
+const FUN_VIDEO_ID = "EaCUyNQWY2M";
 const HOWTO_MEDIA =
   `<video class="howto-video" src="/static/howto.mp4" controls preload="metadata" poster="/static/genius.png"></video>`;
-function funAudioStop() { try { funAudio.pause(); funAudio.currentTime = 0; } catch (e) {} }
-function funApply() {
-  // swap the main-page tutorial video for the meme (standard embed = no VEVO
-  // "unavailable"; the user can press play). Audio is handled separately, on submit.
+// "silent" = muted party preview (home page) · "loud" = with sound (during the wait) · "off" = restore
+function funVideo(mode) {
   const media = $("#howto-media");
   if (!media) return;
-  if (FUN) {
-    media.innerHTML =
-      `<iframe class="howto-video" src="https://www.youtube.com/embed/${FUN_VIDEO_ID}` +
-      `?rel=0&playsinline=1&modestbranding=1" allow="encrypted-media; fullscreen" ` +
-      `referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
-  } else {
-    media.innerHTML = HOWTO_MEDIA;
-    funAudioStop();
+  if (mode === "off") { media.innerHTML = HOWTO_MEDIA; return; }
+  const mute = mode === "silent" ? 1 : 0;
+  media.innerHTML =
+    `<iframe class="howto-video" src="https://www.youtube.com/embed/${FUN_VIDEO_ID}` +
+    `?autoplay=1&mute=${mute}&loop=1&playlist=${FUN_VIDEO_ID}&rel=0&playsinline=1&modestbranding=1" ` +
+    `allow="autoplay; encrypted-media; fullscreen" ` +
+    `referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+}
+function confettiBurst() {
+  const colors = ["#ff2db8", "#7a00ff", "#ffd000", "#00e0c0", "#ff5a5a", "#4fa8ff"];
+  for (let i = 0; i < 110; i++) {
+    const c = document.createElement("div");
+    c.className = "confetti";
+    c.style.left = Math.random() * 100 + "vw";
+    c.style.background = colors[i % colors.length];
+    c.style.animationDelay = (Math.random() * 0.7) + "s";
+    const sz = 6 + Math.random() * 9;
+    c.style.width = c.style.height = sz + "px";
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 4500);
   }
 }
-$("#fun-btn").addEventListener("click", () => {
+function toggleFun() {
   FUN = !FUN;
+  document.body.classList.toggle("fun-mode", FUN);   // party theme applies everywhere
   $("#fun-btn").classList.toggle("on", FUN);
-  funApply();
-});
+  if (FUN) {
+    $("#howto-card") && $("#howto-card").classList.remove("hidden");  // show the party video anywhere
+    funVideo("loud");                                                 // full party — sound on immediately
+    confettiBurst();
+  } else {
+    funVideo("off");
+  }
+}
+$("#fun-btn").addEventListener("click", toggleFun);
 
 // ---- file pickers (click + drag/drop, single dialog) ----
 function wireDrop(dropId, inputId, nameId, label) {
@@ -93,15 +112,18 @@ $("#job-form").addEventListener("submit", async (e) => {
   $("#go").disabled = true;
   $("#go").textContent = "Uploading…";
   try {
-    const r = await fetch("/api/jobs", { method: "POST", body: fd });
-    if (!r.ok) throw new Error("upload failed (" + r.status + ")");
+    const r = await fetch("/api/jobs", { method: "POST", body: fd, headers: authH() });
+    if (!r.ok) {
+      if (r.status === 401) { openSettings(); throw new Error("Your access code is missing, invalid, or revoked."); }
+      throw new Error("upload failed (" + r.status + ")");
+    }
     const { job_id } = await r.json();
     currentJob = job_id;
+    window.currentJob = job_id;   // expose for the Report-a-problem widget
     $("#upload-card").classList.add("hidden");
-    $("#howto-card") && $("#howto-card").classList.add("hidden");
+    if (!FUN) $("#howto-card") && $("#howto-card").classList.add("hidden");  // fun: keep party video playing
     $("#progress-card").classList.remove("hidden");
     $("#result").classList.add("hidden");
-    if (FUN) funAudio.play().catch(() => {});   // audio starts only after submit
     poll();
   } catch (err) {
     alert(err.message);
@@ -127,8 +149,8 @@ function poll() {
     .then((s) => {
       $("#bar").style.width = (s.progress || 0) + "%";
       $("#stage-msg").textContent = s.message || STAGES[s.stage] || s.stage;
-      if (s.status === "done") { funAudioStop(); return showResult(); }
-      if (s.status === "error") { funAudioStop(); return showError(s); }
+      if (s.status === "done") return showResult();
+      if (s.status === "error") return showError(s);
       pollTimer = setTimeout(poll, 1800);
     })
     .catch(() => (pollTimer = setTimeout(poll, 2500)));
@@ -136,6 +158,7 @@ function poll() {
 
 function showError(s) {
   $("#progress-card").classList.add("hidden");
+  $("#howto-card") && $("#howto-card").classList.add("hidden");
   const r = $("#result");
   r.classList.remove("hidden");
   r.innerHTML = `<div class="err"><b>Processing failed.</b><br>${esc(s.message || "")}</div>`;
@@ -154,7 +177,7 @@ async function doRerun() {
   btn.disabled = true; btn.textContent = "Re-running…";
   try {
     const r = await fetch(`/api/jobs/${currentJob}/rerun`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: authH({ "Content-Type": "application/json" }),
       body: JSON.stringify({ instructions: instr }),
     });
     if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || "rerun failed"); }
@@ -163,7 +186,7 @@ async function doRerun() {
     $("#stage-msg").textContent = "Re-running with your instructions…";
     $("#bar").style.width = "0%";
     $("#progress-card").scrollIntoView({ behavior: "smooth" });
-    if (FUN) funAudio.play().catch(() => {});
+    if (FUN) { $("#howto-card") && $("#howto-card").classList.remove("hidden"); funVideo("loud"); }
     poll();
   } catch (e) {
     alert("Rerun failed: " + e.message);
@@ -189,11 +212,15 @@ const frameURL = (name) => name && name.startsWith("up_")
 
 async function showResult() {
   resultData = await (await fetch(`/api/jobs/${currentJob}/result`)).json();
+  $("#howto-card") && $("#howto-card").classList.add("hidden");   // stop the meme when results show
   templateSettings = null;
   partChoice = {};
   for (const st of resultData.stations)
     for (const s of st.steps)
-      (s.components || []).forEach((c, ci) => { partChoice[`${s.step_number}:${ci}`] = c.part_id || ""; });
+      (s.components || []).forEach((c, ci) => {
+        const cands = c.part_candidates || [];
+        partChoice[`${s.step_number}:${ci}`] = c.part_id || (cands[0] ? cands[0].part_no : "");
+      });
   $("#progress-card").classList.add("hidden");
   const root = $("#result");
   root.classList.remove("hidden");
@@ -217,7 +244,7 @@ async function showResult() {
   $("#rerun-btn").addEventListener("click", doRerun);
 
   const samBtn = $("#sam-btn");
-  if (samBtn && !SAM_AVAILABLE) { samBtn.disabled = true; samBtn.title = "SAM backend unavailable"; }
+  if (samBtn && !SAM_AVAILABLE) { samBtn.disabled = true; samBtn.title = "Precise highlight isn't available on this machine"; }
   $("#hl-mode") && $("#hl-mode").querySelectorAll("button").forEach((b) =>
     b.addEventListener("click", () => {
       if (b.disabled) return;
@@ -356,14 +383,14 @@ async function onPartSel(n, sel) {
   }
   const label = v === "__all" ? "" : v;
   const frame = chosenFrame[n] || defFrame(n);
-  badge.textContent = HL_MODE === "sam" ? "⏳ segmenting…" : "⏳ locating…";
+  badge.textContent = HL_MODE === "sam" ? "⏳ tracing the exact shape…" : "⏳ locating…";
   try {
     const q = `step=${n}&mode=${HL_MODE}&frame=${encodeURIComponent(frame)}` +
               (label ? `&label=${encodeURIComponent(label)}` : "");
-    const d = await (await fetch(`/api/jobs/${currentJob}/highlight?${q}`)).json();
+    const d = await (await fetch(`/api/jobs/${currentJob}/highlight?${q}`, { headers: authH() })).json();
     currentImage[n] = d.url.split("?")[0].split("/").pop();   // segmented image -> used in docx
     showStill(n, d.url + "?t=" + Date.now());
-    const tag = d.mode === "sam" ? (d.backend || "SAM").toUpperCase() : "boxes";
+    const tag = d.mode === "sam" ? "precise highlight" : "outline";
     badge.textContent = d.count ? `🎯 ${d.detections.join(", ")} · ${tag} · in doc` : `no match · ${tag}`;
   } catch (e) { badge.textContent = "⚠ failed"; }
 }
@@ -556,8 +583,8 @@ function renderDoc(d) {
       <div class="mode-row">
         <span class="lbl">Part highlighting:</span>
         <div class="hl-mode" id="hl-mode">
-          <button data-mode="box" class="active">Boxes</button>
-          <button data-mode="sam" id="sam-btn">SAM segmentation</button>
+          <button data-mode="box" class="active">Outline</button>
+          <button data-mode="sam" id="sam-btn">Precise highlight</button>
         </div>
       </div>
     </div>`;
@@ -605,30 +632,22 @@ function renderStep(step) {
   }).join("");
 
   const hasCandidates = (step.components || []).some((c) => c.part_candidates && c.part_candidates.length);
-  const comps = (step.components || []).map((c) => {
-    let pid = "", conf = "";
-    if (c.part_id) pid = `<span class="pid">${esc(c.part_id)}</span>`;
-    const m = c.part_match;
-    if (m) {
-      const cls = m.confident ? "hi" : "lo";
-      conf = `<span class="conf ${cls}">${Math.round(m.confidence * 100)}%</span>`;
-      if (!c.part_id) pid = `<span class="pid" title="${esc(m.official_name)}">≈ ${esc(m.part_no)}</span>`;
-    }
-    return `<span class="chip">${esc(c.name)}${pid}${conf}</span>`;
-  }).join("");
+  // without a product document there are no candidates → show component names only (no part IDs)
+  const comps = (step.components || []).map((c) =>
+    `<span class="chip">${esc(c.name)}</span>`).join("");
 
   // when product docs were supplied, show a confidence-ranked Part-ID dropdown per component
   const compPicks = (step.components || []).map((c, ci) => {
     const cands = c.part_candidates || [];
     if (!cands.length) return `<div class="comp-row"><span class="comp-name">${esc(c.name)}</span></div>`;
-    const inCands = cands.some((pc) => pc.part_no === c.part_id);
-    const isCustom = !!(c.part_id && !inCands);          // a persisted custom value
+    const effPid = c.part_id || cands[0].part_no;        // default = highest-confidence match
+    const isCustom = !!(effPid && !cands.some((pc) => pc.part_no === effPid));
     const opts = cands.map((pc) => {
       const pct = Math.round(pc.confidence * 100);
-      const sel = (!isCustom && pc.part_no === c.part_id) ? " selected" : "";
+      const sel = (!isCustom && pc.part_no === effPid) ? " selected" : "";
       return `<option value="${esc(pc.part_no)}"${sel}>${esc(pc.part_no)} — ${esc(pc.official_name)} · ${pct}%</option>`;
     }).join("");
-    const noneSel = !c.part_id ? " selected" : "";
+    const noneSel = !effPid ? " selected" : "";
     const userSet = c.part_id_user_set ? ` <span class="saved-tag">✓ set</span>` : "";
     return `
       <div class="comp-row">
@@ -719,8 +738,26 @@ function download(name, obj) {
   URL.revokeObjectURL(a.href);
 }
 
-// ---- settings / API key + capabilities ----
+// ---- settings / access code or API key + capabilities ----
+function applySettingsCopy() {
+  const t = $("#settings-title"), h = $("#settings-help"), inp = $("#api-key"), btn = $("#save-key");
+  if (!inp) return;
+  if (MODE === "gateway") {
+    if (t) t.textContent = "Enter your access code";
+    if (h) h.textContent = "Paste the access code you were given. It connects you to the AI engine " +
+      "and can be revoked by the operator at any time. Stored on this device only.";
+    inp.placeholder = "ABICOR-XXXX-XXXX";
+    if (btn) btn.textContent = "Connect";
+  } else {
+    if (t) t.textContent = "Connect the AI engine";
+    if (h) h.textContent = "Paste your access key to enable the engine. It is stored locally on this " +
+      "machine only and never shown again.";
+    inp.placeholder = "Paste your API key…";
+    if (btn) btn.textContent = "Save & verify";
+  }
+}
 function openSettings() {
+  applySettingsCopy();
   $("#settings").classList.remove("hidden");
   setTimeout(() => $("#api-key").focus(), 50);
 }
@@ -740,20 +777,36 @@ $("#t-template").addEventListener("change", (e) => {
 });
 
 $("#save-key").addEventListener("click", async () => {
-  const key = $("#api-key").value.trim();
+  const val = $("#api-key").value.trim();
   const st = $("#key-status");
-  if (!key) { st.className = "key-status err"; st.textContent = "Please paste a key."; return; }
+  if (!val) {
+    st.className = "key-status err";
+    st.textContent = MODE === "gateway" ? "Please paste your access code." : "Please paste a key.";
+    return;
+  }
   st.className = "key-status"; st.textContent = "Verifying…";
   $("#save-key").disabled = true;
   try {
-    const r = await fetch("/api/config", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gemini_api_key: key }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || "Could not verify key");
-    CONFIGURED = true;
-    st.className = "key-status ok"; st.textContent = "Connected ✓";
+    if (MODE === "gateway") {
+      const r = await fetch("/api/access/verify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: val }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "That access code was rejected.");
+      ACCESS = val; localStorage.setItem("abicor_access", val);
+      CONFIGURED = true;
+      st.className = "key-status ok"; st.textContent = (d.label ? "Welcome, " + d.label + " — " : "") + "connected ✓";
+    } else {
+      const r = await fetch("/api/config", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gemini_api_key: val }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "Could not verify key");
+      CONFIGURED = true;
+      st.className = "key-status ok"; st.textContent = "Connected ✓";
+    }
     setTimeout(closeSettings, 700);
   } catch (e) {
     st.className = "key-status err"; st.textContent = e.message;
@@ -764,12 +817,27 @@ $("#save-key").addEventListener("click", async () => {
 async function boot() {
   try {
     const c = await (await fetch("/api/config")).json();
-    CONFIGURED = !!c.configured;
+    MODE = c.mode || "byok";
+    if (MODE === "gateway") {
+      if (ACCESS) {                      // silently re-verify a stored code on load
+        try {
+          const v = await fetch("/api/access/verify", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: ACCESS }),
+          });
+          CONFIGURED = v.ok;
+          if (!v.ok) { ACCESS = ""; localStorage.removeItem("abicor_access"); }
+        } catch (e) { CONFIGURED = false; }
+      }
+    } else {
+      CONFIGURED = !!c.engine_ready;
+    }
   } catch (e) {}
   try {
     const cap = await (await fetch("/api/capabilities")).json();
     SAM_AVAILABLE = !!cap.sam;
   } catch (e) {}
+  applySettingsCopy();
   if (!CONFIGURED) openSettings();
 }
 boot();
