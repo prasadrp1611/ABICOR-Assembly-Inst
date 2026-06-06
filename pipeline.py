@@ -300,6 +300,19 @@ def process_job(job_id: str, options: dict):
                 data = match_parts(client, data, parts, progress)
                 data["source_documents"] = parts_files
 
+        # re-apply the user's saved Part-ID corrections (survives reruns), by component name
+        overrides = options.get("part_overrides") or {}
+        if overrides:
+            for st in data["stations"]:
+                for s in st["steps"]:
+                    for c in s.get("components", []):
+                        k = (c.get("name") or "").strip().lower()
+                        if k in overrides:
+                            c["part_id"] = overrides[k]
+                            c["part_id_user_set"] = True
+            data["parts_matched"] = sum(1 for st in data["stations"] for s in st["steps"]
+                                        for c in s.get("components", []) if c.get("part_id"))
+
         # ontology / knowledge graph (supplementary — never fails the job)
         if vfile is not None:
             try:

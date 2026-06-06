@@ -249,14 +249,39 @@ function initSteps() {
           custom.classList.remove("hidden");
           custom.focus();
           partChoice[key] = custom.value.trim();
+          if (custom.value.trim()) { persistPartChoice(n, ci, custom.value.trim()); flashSaved(sel); }
         } else {
           if (custom) custom.classList.add("hidden");
           partChoice[key] = sel.value;
+          persistPartChoice(n, ci, sel.value); flashSaved(sel);
         }
       });
-      if (custom) custom.addEventListener("input", () => { partChoice[key] = custom.value.trim(); });
+      if (custom) {
+        custom.addEventListener("input", () => { partChoice[key] = custom.value.trim(); });
+        custom.addEventListener("change", () => { persistPartChoice(n, ci, custom.value.trim()); flashSaved(custom); });
+      }
     });
   });
+}
+
+async function persistPartChoice(step, ci, partNo) {
+  // keep the in-memory result in sync so a JSON download reflects the choice
+  for (const st of resultData.stations)
+    for (const s of st.steps)
+      if (s.step_number == step) {
+        const c = (s.components || [])[ci];
+        if (c) { c.part_id = partNo; c.part_id_user_set = true; }
+      }
+  try {
+    await fetch(`/api/jobs/${currentJob}/part_choice`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step: +step, ci: +ci, part_no: partNo }),
+    });
+  } catch (e) {}
+}
+function flashSaved(el) {
+  el.classList.add("saved");
+  setTimeout(() => el.classList.remove("saved"), 900);
 }
 
 async function loadFrameOptions(n, sel) {
@@ -553,20 +578,25 @@ function renderStep(step) {
   const compPicks = (step.components || []).map((c, ci) => {
     const cands = c.part_candidates || [];
     if (!cands.length) return `<div class="comp-row"><span class="comp-name">${esc(c.name)}</span></div>`;
+    const inCands = cands.some((pc) => pc.part_no === c.part_id);
+    const isCustom = !!(c.part_id && !inCands);          // a persisted custom value
     const opts = cands.map((pc) => {
       const pct = Math.round(pc.confidence * 100);
-      const sel = pc.part_no === c.part_id ? " selected" : "";
+      const sel = (!isCustom && pc.part_no === c.part_id) ? " selected" : "";
       return `<option value="${esc(pc.part_no)}"${sel}>${esc(pc.part_no)} — ${esc(pc.official_name)} · ${pct}%</option>`;
     }).join("");
+    const noneSel = !c.part_id ? " selected" : "";
+    const userSet = c.part_id_user_set ? ` <span class="saved-tag">✓ set</span>` : "";
     return `
       <div class="comp-row">
-        <span class="comp-name">${esc(c.name)}</span>
+        <span class="comp-name">${esc(c.name)}${userSet}</span>
         <select class="part-pick" data-step="${n}" data-ci="${ci}">
-          <option value="">— no part —</option>
+          <option value=""${noneSel}>— no part —</option>
           ${opts}
-          <option value="__custom">✎ Custom…</option>
+          <option value="__custom"${isCustom ? " selected" : ""}>✎ Custom…</option>
         </select>
-        <input class="part-custom hidden" data-step="${n}" data-ci="${ci}" placeholder="part no."/>
+        <input class="part-custom ${isCustom ? "" : "hidden"}" data-step="${n}" data-ci="${ci}"
+               placeholder="part no." value="${isCustom ? esc(c.part_id) : ""}"/>
       </div>`;
   }).join("");
 

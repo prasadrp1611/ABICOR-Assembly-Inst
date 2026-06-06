@@ -224,6 +224,44 @@ def rerun_job(job_id: str, body: dict = Body(...)):
     return {"job_id": job_id, "rerun": True}
 
 
+@app.post("/api/jobs/{job_id}/part_choice")
+def set_part_choice(job_id: str, body: dict = Body(...)):
+    """Persist a user's Part-ID choice into assembly.json and remember it for reruns."""
+    job_dir = config.JOBS_DIR / job_id
+    rf = job_dir / "assembly.json"
+    if not rf.exists():
+        raise HTTPException(404, "result not ready")
+    data = json.loads(rf.read_text(encoding="utf-8"))
+    step_no = int(body.get("step", -1))
+    ci = int(body.get("ci", -1))
+    pn = (body.get("part_no") or "").strip()
+
+    cname = None
+    for st in data["stations"]:
+        for s in st["steps"]:
+            if s["step_number"] == step_no:
+                comps = s.get("components", [])
+                if 0 <= ci < len(comps):
+                    comps[ci]["part_id"] = pn
+                    comps[ci]["part_id_user_set"] = True
+                    cname = comps[ci].get("name")
+    data["parts_matched"] = sum(1 for st in data["stations"] for s in st["steps"]
+                                for c in s.get("components", []) if c.get("part_id"))
+    rf.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # remember the override (keyed by component name) so a future rerun keeps it
+    if cname:
+        sf = job_dir / "status.json"
+        if sf.exists():
+            stj = json.loads(sf.read_text(encoding="utf-8"))
+            opts = stj.get("options", {})
+            ov = opts.get("part_overrides") or {}
+            ov[cname.strip().lower()] = pn
+            opts["part_overrides"] = ov
+            write_status(job_dir, options=opts)
+    return {"ok": True, "parts_matched": data["parts_matched"]}
+
+
 @app.get("/api/jobs/{job_id}/frames/{name}")
 def job_frame(job_id: str, name: str):
     fp = config.JOBS_DIR / job_id / "frames" / Path(name).name
