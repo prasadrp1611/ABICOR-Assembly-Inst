@@ -849,6 +849,12 @@ async function loadSessions() {
     list.innerHTML = '<div class="sb-empty">No documents yet.<br>Click “＋ New document”.</div>';
     return;
   }
+  const sort = ($("#sb-sort") && $("#sb-sort").value) || "recent";
+  jobs.sort((a, b) => {
+    if (sort === "name") return sessionName(a).localeCompare(sessionName(b));
+    const ta = a.created_at || 0, tb = b.created_at || 0;
+    return sort === "oldest" ? ta - tb : tb - ta;   // recent = newest first
+  });
   const card = (j) => `<div class="sb-card${j.id === currentJob ? " active" : ""}" data-id="${j.id}">
       <img class="sb-thumb" src="/api/jobs/${j.id}/frames/step_01.jpg"
            onerror="this.src='/static/genius.png'"/>
@@ -902,6 +908,48 @@ function showUpload() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+// ---- combined knowledge graph (all sessions merged into one) ----
+const KG_COLORS = { Tool: "#e74c3c", Component: "#3498db", Material: "#2ecc71",
+  Action: "#f39c12", Property: "#9b59b6", SafetyMeasure: "#e91e63" };
+let kgNet = null;
+async function openKnowledgeGraph() {
+  const modal = $("#kg-modal");
+  modal.classList.remove("hidden");
+  $("#kg-stats").textContent = " · loading…";
+  let d;
+  try { d = await (await fetch("/api/knowledge")).json(); }
+  catch (e) { $("#kg-stats").textContent = " · failed to load"; return; }
+  $("#kg-stats").textContent =
+    ` · ${d.stats.n_nodes} entities · ${d.stats.n_edges} links · ${d.stats.n_sessions} videos`;
+  $("#kg-legend").innerHTML = Object.entries(KG_COLORS)
+    .filter(([k]) => (d.stats.classes || {})[k])
+    .map(([k, c]) => `<span><i style="background:${c}"></i>${k} (${d.stats.classes[k]})</span>`).join("");
+  if (!window.vis) { $("#kg-stats").textContent = " · graph library not loaded"; return; }
+  const nodes = d.nodes.map((n) => ({
+    id: n.id, label: n.label, group: n.cls, value: n.sessions,
+    color: KG_COLORS[n.cls] || "#95a5a6",
+    title: `${n.label} — in ${n.sessions} video(s)`,
+  }));
+  const edges = d.edges.map((e) => ({ from: e.source, to: e.target, label: e.predicate }));
+  if (kgNet) kgNet.destroy();
+  kgNet = new vis.Network($("#kg-canvas"),
+    { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
+    {
+      nodes: { shape: "dot", scaling: { min: 8, max: 42 },
+        font: { color: "#e8e8f0", size: 13, strokeWidth: 3, strokeColor: "#0e0c16" } },
+      edges: { color: { color: "#56546e", highlight: "#C1006F" }, width: 0.6,
+        font: { color: "#8a87a0", size: 9, strokeWidth: 0 },
+        smooth: { type: "continuous" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
+      physics: { stabilization: { iterations: 160 },
+        barnesHut: { gravitationalConstant: -9000, springLength: 130, springConstant: 0.03 } },
+      interaction: { hover: true, tooltipDelay: 120 },
+    });
+}
+function closeKnowledgeGraph() {
+  $("#kg-modal").classList.add("hidden");
+  if (kgNet) { kgNet.destroy(); kgNet = null; }
+}
+
 async function boot() {
   try {
     const c = await (await fetch("/api/config")).json();
@@ -929,6 +977,9 @@ async function boot() {
   loadSessions();
   setInterval(loadSessions, 8000);
   $("#sb-new") && $("#sb-new").addEventListener("click", showUpload);
+  $("#sb-graph") && $("#sb-graph").addEventListener("click", openKnowledgeGraph);
+  $("#kg-close") && $("#kg-close").addEventListener("click", closeKnowledgeGraph);
+  $("#sb-sort") && $("#sb-sort").addEventListener("change", loadSessions);
   if (!CONFIGURED) openSettings();
 }
 boot();

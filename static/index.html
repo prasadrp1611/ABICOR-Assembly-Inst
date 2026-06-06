@@ -14,6 +14,14 @@
     <div class="sb-title">ABICOR<span>Assembly Docs</span></div>
   </div>
   <button id="sb-new" class="sb-new" title="Start a new document">＋ New document</button>
+  <button id="sb-graph" class="sb-graph" title="See everything as one knowledge graph">🌐 Knowledge graph</button>
+  <div class="sb-sort">
+    <select id="sb-sort">
+      <option value="recent">Recent first</option>
+      <option value="oldest">Oldest first</option>
+      <option value="name">Name A–Z</option>
+    </select>
+  </div>
   <div class="sb-list" id="session-list"><div class="sb-empty">No documents yet.</div></div>
   <div class="sb-team">
     <div class="sb-team-cap">Team</div>
@@ -107,7 +115,10 @@
 </main>
 
 <footer class="foot">
-  Powered by a proprietary multimodal AI engine · deterministic, schema-validated output
+  We're gonna ship so much, you may even get tired of shipping. And you'll say,
+  &ldquo;Please, please &mdash; it's too much shipping, we can't take it anymore,
+  Mr.&nbsp;Developer, it's too much.&rdquo; And we'll say, &ldquo;No it isn't.
+  We have to keep shipping. We have to ship more!&rdquo;
 </footer>
 
 <!-- settings / API key modal -->
@@ -165,6 +176,17 @@
   </div>
 </div>
 
+<!-- combined knowledge graph -->
+<div class="kg-modal hidden" id="kg-modal">
+  <div class="kg-head">
+    <div class="kg-title">🌐 Combined Knowledge Graph<span id="kg-stats" class="kg-stats"></span></div>
+    <div class="kg-legend" id="kg-legend"></div>
+    <button class="x" id="kg-close" title="close">✕</button>
+  </div>
+  <div id="kg-canvas"></div>
+</div>
+
+<script src="/static/vendor/vis-network.min.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/report.js"></script>
 </body>

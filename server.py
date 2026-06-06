@@ -257,13 +257,14 @@ async def create_job(
 @app.get("/api/jobs")
 def list_jobs():
     out = []
-    for d in sorted(config.JOBS_DIR.iterdir(), reverse=True):
+    for d in config.JOBS_DIR.iterdir():
         sf = d / "status.json"
         if sf.exists():
             try:
                 out.append(json.loads(sf.read_text(encoding="utf-8")))
             except Exception:
                 pass
+    out.sort(key=lambda j: j.get("created_at") or 0, reverse=True)   # newest first
     return out
 
 
@@ -456,6 +457,51 @@ def ontology_png(job_id: str):
     if not f.exists():
         raise HTTPException(404, "no ontology image")
     return FileResponse(f, media_type="image/png")
+
+
+@app.get("/api/knowledge")
+def knowledge_graph():
+    """Merge every (non-archived) session's ontology into ONE combined knowledge graph.
+    Same entity label across videos = one node (so the videos connect)."""
+    nodes, edges, n_sessions = {}, {}, 0
+    for d in config.JOBS_DIR.iterdir():
+        of, sf = d / "ontology.json", d / "status.json"
+        if not of.exists():
+            continue
+        try:
+            if sf.exists() and json.loads(sf.read_text(encoding="utf-8")).get("archived"):
+                continue
+            onto = json.loads(of.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        ents = onto.get("entities") or []
+        if not ents:
+            continue
+        n_sessions += 1
+        local = {}
+        for e in ents:
+            label = (e.get("label") or "").strip()
+            if not label:
+                continue
+            key = label.lower()
+            local[e.get("id")] = key
+            n = nodes.get(key) or nodes.setdefault(
+                key, {"id": key, "label": label, "cls": e.get("cls", "Component"), "sessions": set()})
+            n["sessions"].add(d.name)
+        for r in (onto.get("relationships") or []):
+            sk, ok = local.get(r.get("subject")), local.get(r.get("object"))
+            if sk and ok and sk != ok:
+                k = (sk, r.get("predicate", ""), ok)
+                edges[k] = edges.get(k, 0) + 1
+    from collections import Counter
+    return {
+        "nodes": [{"id": n["id"], "label": n["label"], "cls": n["cls"],
+                   "sessions": len(n["sessions"])} for n in nodes.values()],
+        "edges": [{"source": s, "target": o, "predicate": p, "weight": w}
+                  for (s, p, o), w in edges.items()],
+        "stats": {"n_nodes": len(nodes), "n_edges": len(edges), "n_sessions": n_sessions,
+                  "classes": dict(Counter(n["cls"] for n in nodes.values()))},
+    }
 
 
 @app.get("/api/jobs/{job_id}/highlight")
