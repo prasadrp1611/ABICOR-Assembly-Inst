@@ -10,7 +10,10 @@ if exist .venv\Scripts\activate.bat (
 
 echo.
 echo Starting ABICOR Assembly-Doc Generator ...
-echo Open http://127.0.0.1:8000 in your browser.   ^(Press Ctrl+C to stop^)
+echo It will open automatically at http://127.0.0.1:8000
+echo Keep this window open while you use the app.   ^(Press Ctrl+C to stop^)
 echo.
+REM open the browser a few seconds after the server has started
+start "" /min cmd /c "timeout /t 4 /nobreak >nul & start http://127.0.0.1:8000"
 python server.py
 pause
