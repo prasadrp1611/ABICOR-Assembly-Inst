@@ -250,7 +250,8 @@ def match_parts(client, data: dict, parts: list, progress):
                     "confidence": round(best_s, 3),
                     "confident": confident,
                 }
-                comp["part_id"] = best_p["part_no"] if confident else ""
+                # default to the highest-confidence match (never "no part" by default)
+                comp["part_id"] = best_p["part_no"]
                 if confident:
                     matched += 1
     data["parts_matched"] = matched
@@ -294,11 +295,22 @@ def process_job(job_id: str, options: dict):
 
         parts_files = options.get("parts_filenames") or (
             [options["parts_filename"]] if options.get("parts_filename") else [])
+        matched_ran = False
         if parts_files:
             parts = extract_parts_from_docs(client, [job_dir / p for p in parts_files], progress)
             if parts:
                 data = match_parts(client, data, parts, progress)
                 data["source_documents"] = parts_files
+                matched_ran = True
+        if not matched_ran:
+            # No usable product document -> never show (possibly hallucinated) part numbers.
+            for st in data["stations"]:
+                for s in st["steps"]:
+                    for c in s.get("components", []):
+                        c["part_id"] = ""
+                        c.pop("part_candidates", None)
+                        c.pop("part_match", None)
+            data["parts_matched"] = 0
 
         # re-apply the user's saved Part-ID corrections (survives reruns), by component name
         overrides = options.get("part_overrides") or {}

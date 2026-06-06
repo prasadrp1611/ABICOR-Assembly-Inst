@@ -678,6 +678,10 @@ $("#tmpl-close").addEventListener("click", () => $("#tmpl-modal").classList.add(
 $("#tmpl-modal").addEventListener("click", (e) => { if (e.target.id === "tmpl-modal") $("#tmpl-modal").classList.add("hidden"); });
 $("#tmpl-reset").addEventListener("click", () => { templateSettings = defaultTemplate(); openTemplate(); });
 $("#tmpl-gen").addEventListener("click", templateGenerate);
+$("#t-template").addEventListener("change", (e) => {
+  e.target.value = "";
+  alert("Custom output templates are coming soon. For now the document uses the ABICOR BINZEL template — edit its fields above.");
+});
 
 $("#save-key").addEventListener("click", async () => {
   const key = $("#api-key").value.trim();
