@@ -4,6 +4,7 @@ let currentJob = null;
 let CONFIGURED = false;
 let SAM_AVAILABLE = false;
 let HL_MODE = "box";
+let lastInstructions = "";   // persists the refine/rerun prompt across re-renders
 
 // ---- fun mode (easter egg): plays audio while a job is parsing ----
 let FUN = false;
@@ -124,6 +125,30 @@ function resetForm() {
   $("#go").textContent = "Generate";
 }
 
+async function doRerun() {
+  const instr = $("#refine-text").value.trim();
+  lastInstructions = instr;
+  const btn = $("#rerun-btn");
+  btn.disabled = true; btn.textContent = "Re-running…";
+  try {
+    const r = await fetch(`/api/jobs/${currentJob}/rerun`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instructions: instr }),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || "rerun failed"); }
+    $("#result").classList.add("hidden");
+    $("#progress-card").classList.remove("hidden");
+    $("#stage-msg").textContent = "Re-running with your instructions…";
+    $("#bar").style.width = "0%";
+    $("#progress-card").scrollIntoView({ behavior: "smooth" });
+    if (FUN) funAudio.play().catch(() => {});
+    poll();
+  } catch (e) {
+    alert("Rerun failed: " + e.message);
+    btn.disabled = false; btn.textContent = "↻ Rerun analysis";
+  }
+}
+
 // ---- render result ----
 let resultData = null;
 const chosenFrame = {};    // step -> picked frame filename, or null = video snippet
@@ -150,6 +175,17 @@ async function showResult() {
   $("#new-job").addEventListener("click", () => location.reload());
   $("#toggle-edit").addEventListener("click", toggleEdit);
   $("#export-docx").addEventListener("click", exportWord);
+
+  // refine & rerun
+  $("#toggle-refine").addEventListener("click", () => $("#refine").classList.toggle("hidden"));
+  $("#refine-text").value = lastInstructions;
+  document.querySelectorAll(".refine-presets button").forEach((b) =>
+    b.addEventListener("click", () => {
+      const t = $("#refine-text");
+      t.value = (t.value.trim() ? t.value.trim() + " " : "") + b.dataset.add;
+      t.focus();
+    }));
+  $("#rerun-btn").addEventListener("click", doRerun);
 
   const samBtn = $("#sam-btn");
   if (samBtn && !SAM_AVAILABLE) { samBtn.disabled = true; samBtn.title = "SAM backend unavailable"; }
@@ -355,10 +391,24 @@ function renderDoc(d) {
       <div class="doc-meta">${meta}</div>
       <p class="muted">${esc(d.summary || "")}</p>
       <div class="doc-actions">
-        <button class="btn-primary" id="toggle-edit">✎ Edit</button>
+        <button class="btn-primary" id="toggle-refine">↻ Refine &amp; Rerun</button>
+        <button class="btn-ghost" id="toggle-edit">✎ Edit</button>
         <button class="btn-ghost" id="export-docx">⬇ Export Word</button>
         <button class="btn-ghost" id="dl-json">⬇ JSON</button>
         <button class="btn-ghost" id="new-job">+ New video</button>
+      </div>
+      <div class="refine hidden" id="refine">
+        <div class="refine-title">Tell the AI what to change, then re-run on the same video:</div>
+        <div class="refine-presets">
+          <button type="button" data-add="Break the procedure into more, smaller steps — ideally one action per step.">+ More steps</button>
+          <button type="button" data-add="Combine into fewer, higher-level steps.">− Fewer steps</button>
+          <button type="button" data-add="Be much more verbose: add more detail and more instruction points per step.">More verbose</button>
+          <button type="button" data-add="Add explicit safety warnings wherever relevant.">⚠ Safety notes</button>
+          <button type="button" data-add="Use simpler, beginner-friendly language.">Simpler language</button>
+          <button type="button" data-add="Identify and name every tool and fastener used.">Name all tools</button>
+        </div>
+        <textarea id="refine-text" placeholder="e.g. Split each screw into its own step and mention the exact tool used. Be very detailed."></textarea>
+        <button class="btn-primary" id="rerun-btn">↻ Rerun analysis</button>
       </div>
       <div class="mode-row">
         <span class="lbl">Part highlighting:</span>

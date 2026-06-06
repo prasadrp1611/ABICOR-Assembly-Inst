@@ -112,6 +112,17 @@ main{max-width:1060px;margin:26px auto;padding:0 20px;
   border-radius:9px;padding:9px 16px;font-weight:600;cursor:pointer;font-size:14px}
 .btn-ghost:hover{background:#fdf2f8}
 
+/* refine & rerun panel */
+.refine{margin-top:14px;background:#faf7fb;border:1px solid var(--line);border-radius:12px;padding:14px}
+.refine-title{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px}
+.refine-presets{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
+.refine-presets button{background:#fff;border:1px solid var(--magenta);color:var(--magenta);
+  border-radius:20px;padding:5px 12px;font-size:12.5px;cursor:pointer;transition:.12s}
+.refine-presets button:hover{background:var(--magenta);color:#fff}
+.refine textarea{width:100%;min-height:64px;border:1px solid var(--line);border-radius:9px;
+  padding:10px 12px;font-size:13.5px;font-family:inherit;resize:vertical;margin-bottom:10px}
+.refine textarea:focus{outline:none;border-color:var(--magenta)}
+
 .station-title{margin:24px 4px 12px;font-size:17px;font-weight:800;color:var(--magenta-d)}
 
 /* step card */

@@ -51,7 +51,7 @@ def write_status(job_dir: Path, **fields):
 
 
 # --------------------------------------------------------------------------- stages
-def analyze_video(client, video_path: str, progress) -> dict:
+def analyze_video(client, video_path: str, progress, extra: str = "") -> dict:
     progress(stage="uploading", progress=10,
              message="Ingesting media…")
     vfile = client.files.upload(file=video_path)
@@ -63,9 +63,13 @@ def analyze_video(client, video_path: str, progress) -> dict:
 
     progress(stage="analyzing", progress=35,
              message="Multimodal engine analysing the procedure…")
+    user_msg = USER_INSTRUCTION
+    if extra:
+        user_msg += ("\n\nADDITIONAL INSTRUCTIONS FROM THE USER — apply these while "
+                     "still obeying the schema and all rules above:\n" + extra)
     resp = client.models.generate_content(
         model=config.MODEL,
-        contents=[vfile, USER_INSTRUCTION],
+        contents=[vfile, user_msg],
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             temperature=config.TEMPERATURE,
@@ -129,7 +133,7 @@ def merge_chunk_docs(chunk_results: list, full_duration: float) -> dict:
 
 
 def process_chunked(client, video_path: str, job_dir: Path, progress,
-                    chunk_minutes: float, duration: float) -> dict:
+                    chunk_minutes: float, duration: float, extra: str = "") -> dict:
     clips_dir = job_dir / "chunks"
     clips_dir.mkdir(exist_ok=True)
     plan = chunking.plan_chunks(duration, chunk_minutes)
@@ -142,7 +146,7 @@ def process_chunked(client, video_path: str, job_dir: Path, progress,
         progress(stage="analyzing",
                  progress=18 + int(60 * c["index"] / max(1, len(plan))),
                  message=f"Analysing part {c['index'] + 1} of {len(plan)}…")
-        data, _ = analyze_video(client, str(clip), progress)
+        data, _ = analyze_video(client, str(clip), progress, extra)
         results.append((c, data))
     merged = merge_chunk_docs(results, duration)
     merged["source"]["video_file"] = os.path.basename(video_path)
@@ -243,13 +247,14 @@ def process_job(job_id: str, options: dict):
         # auto-chunk long videos (>15 min) into 10-min parts unless told otherwise
         auto = chunk_minutes <= 0 and duration > 15 * 60
         use_chunks = chunk_minutes > 0 or auto
+        extra = (options.get("extra_instructions") or "").strip()
         vfile = None
 
         if use_chunks:
             cm = chunk_minutes if chunk_minutes > 0 else 10
-            data = process_chunked(client, video_path, job_dir, progress, cm, duration)
+            data = process_chunked(client, video_path, job_dir, progress, cm, duration, extra)
         else:
-            data, vfile = analyze_video(client, video_path, progress)
+            data, vfile = analyze_video(client, video_path, progress, extra)
 
         # apply user-provided product overrides
         for k in ("name", "model", "id_number"):

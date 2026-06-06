@@ -196,6 +196,26 @@ def job_result(job_id: str):
     return JSONResponse(json.loads(rf.read_text(encoding="utf-8")))
 
 
+@app.post("/api/jobs/{job_id}/rerun")
+def rerun_job(job_id: str, body: dict = Body(...)):
+    """Re-run analysis on the already-uploaded video with extra prompt instructions."""
+    if not config.has_key():
+        raise HTTPException(400, "API key not configured. Open Settings and add your key.")
+    job_dir = config.JOBS_DIR / job_id
+    sf = job_dir / "status.json"
+    if not sf.exists():
+        raise HTTPException(404, "job not found")
+    st = json.loads(sf.read_text(encoding="utf-8"))
+    options = st.get("options", {})
+    if not options.get("video_filename"):
+        raise HTTPException(400, "original video not available for rerun")
+    options["extra_instructions"] = (body.get("instructions") or "").strip()
+    write_status(job_dir, status="queued", stage="queued", progress=0,
+                 message="Re-running with your instructions…", options=options)
+    _run_job(job_id, options)
+    return {"job_id": job_id, "rerun": True}
+
+
 @app.get("/api/jobs/{job_id}/frames/{name}")
 def job_frame(job_id: str, name: str):
     fp = config.JOBS_DIR / job_id / "frames" / Path(name).name
