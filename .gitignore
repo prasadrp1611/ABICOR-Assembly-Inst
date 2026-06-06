@@ -9,6 +9,10 @@ keyvault/tokens.json
 keyvault/usage.json
 keyvault/KILL
 
+# containerised / external data dir (ABICOR_DATA_DIR / VAULT_STATE_DIR)
+data/
+*/data/
+
 # incident intake queue (user-reported problems for the support bot)
 incidents/
 

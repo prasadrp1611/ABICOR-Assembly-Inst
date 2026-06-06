@@ -1,0 +1,40 @@
+# Sandbox to serve the ABICOR app. Put your settings in a `.env` file next to this
+# file (it's gitignored). Then:  docker compose up --build
+#
+# Pick ONE engine setup in that .env:
+#   Direct key:  GEMINI_API_KEY=<your key>
+#   Via vault :  GEMINI_PROXY_URL=http://vault:8800   and   GEMINI_API_KEY=<hsk_ token>
+services:
+  app:
+    build: .
+    image: abicor-assembly-app
+    ports:
+      - "8000:8000"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_PROXY_URL: ${GEMINI_PROXY_URL:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+    volumes:
+      - app_data:/data
+    restart: unless-stopped
+
+  # Optional: run the key-vault in the same sandbox (production one lives on Rocky).
+  # Set VAULT_GEMINI_API_KEY to your SMALL-FLOAT key, bring it up, mint a token with
+  #   docker compose exec vault python manage_tokens.py new --label "ABICOR app"
+  # then put GEMINI_PROXY_URL=http://vault:8800 + that hsk_ token in the app's env.
+  # vault:
+  #   build: ./keyvault
+  #   image: abicor-keyvault
+  #   environment:
+  #     GEMINI_API_KEY: ${VAULT_GEMINI_API_KEY:-}
+  #     VAULT_ADMIN_TOKEN: ${VAULT_ADMIN_TOKEN:-}
+  #     VAULT_HOST: 0.0.0.0
+  #     VAULT_STATE_DIR: /state
+  #   volumes:
+  #     - vault_state:/state
+  #   restart: unless-stopped
+
+volumes:
+  app_data:
+  # vault_state:

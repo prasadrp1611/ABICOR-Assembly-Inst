@@ -39,9 +39,13 @@ ADMIN = (os.getenv("VAULT_ADMIN_TOKEN") or "").strip()
 # 0 = unlimited. A hard ceiling across ALL tokens — your last line of defence.
 GLOBAL_TOKEN_CAP = int(os.getenv("VAULT_GLOBAL_TOKEN_CAP", "0") or 0)
 
-TOKENS_PATH = HERE / "tokens.json"     # handshake tokens (hashed) — Rocky manages
-USAGE_PATH = HERE / "usage.json"       # per-token ledger — Rocky monitors
-KILL_PATH = HERE / "KILL"              # presence = global breaker engaged
+# State (token hashes, usage ledger, kill flag) lives here. Defaults next to the
+# code, but set VAULT_STATE_DIR to a writable path when the install dir is read-only.
+STATE_DIR = Path(os.getenv("VAULT_STATE_DIR", str(HERE)))
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+TOKENS_PATH = STATE_DIR / "tokens.json"     # handshake tokens (hashed) — Rocky manages
+USAGE_PATH = STATE_DIR / "usage.json"       # per-token ledger — Rocky monitors
+KILL_PATH = STATE_DIR / "KILL"              # presence = global breaker engaged
 
 _lock = threading.Lock()
 

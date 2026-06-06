@@ -1,0 +1,29 @@
+# keep secrets, state and bulk out of the build context / image
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+
+# secrets — never in an image
+.env
+*/.env
+access_codes.json
+keyvault/tokens.json
+keyvault/usage.json
+keyvault/KILL
+
+# runtime state / generated
+jobs/
+data/
+*/data/
+incidents/
+*.docx
+~$*
+
+.DS_Store
+Thumbs.db
+node_modules

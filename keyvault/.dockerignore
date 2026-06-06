@@ -1,0 +1,8 @@
+.env
+tokens.json
+usage.json
+KILL
+__pycache__
+*.pyc
+*.pyo
+.venv

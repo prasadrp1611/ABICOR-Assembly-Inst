@@ -528,7 +528,7 @@ async def report_incident(request: Request, payload: dict = Body(...)):
     to the incident queue that the external support bot (Rocky) reads on the box.
     No LLM and no code execution on this path — that's what keeps it safe from
     prompt-injection. Never accepts or stores auth headers / access codes / keys."""
-    inc_dir = config.APP_DIR / "incidents"
+    inc_dir = config.DATA_DIR / "incidents"
     inc_dir.mkdir(exist_ok=True)
     iid = uuid.uuid4().hex[:12]
 

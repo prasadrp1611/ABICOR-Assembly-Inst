@@ -6,10 +6,14 @@ from google import genai
 from google.genai import types
 
 APP_DIR  = Path(__file__).resolve().parent
-JOBS_DIR = APP_DIR / "jobs"
+# Runtime state (jobs, access codes, incidents) lives here. Defaults to the app dir,
+# but in a read-only / containerised deploy point ABICOR_DATA_DIR at a writable volume.
+DATA_DIR = Path(os.getenv("ABICOR_DATA_DIR", str(APP_DIR)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+JOBS_DIR = DATA_DIR / "jobs"
 JOBS_DIR.mkdir(exist_ok=True)
 ENV_PATH = APP_DIR / ".env"
-CODES_PATH = APP_DIR / "access_codes.json"   # gitignored — operator-managed
+CODES_PATH = DATA_DIR / "access_codes.json"   # gitignored — operator-managed
 
 # Load .env from the app dir first, then the parent home dir as a fallback.
 load_dotenv(ENV_PATH)
