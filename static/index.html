@@ -15,7 +15,10 @@
       <div class="brand-sub">Assembly-Doc Generator</div>
     </div>
   </div>
-  <div class="brand-note">Video&nbsp;→&nbsp;deterministic assembly instructions</div>
+  <div class="top-right">
+    <span class="brand-note">Video&nbsp;→&nbsp;deterministic assembly instructions</span>
+    <button class="gear" id="open-settings" title="API key">⚙</button>
+  </div>
 </header>
 
 <main>
@@ -68,6 +71,23 @@
 <footer class="foot">
   Powered by a proprietary multimodal AI engine · deterministic, schema-validated output
 </footer>
+
+<!-- settings / API key modal -->
+<div class="modal hidden" id="settings">
+  <div class="modal-box">
+    <div class="modal-head">
+      <b>Connect the AI engine</b>
+      <button class="x" id="settings-close">✕</button>
+    </div>
+    <p class="muted small">Paste your access key to enable the engine. It is stored
+      locally on this machine only and never shown again.</p>
+    <input type="password" id="api-key" class="key-in" placeholder="Paste your API key…"/>
+    <div id="key-status" class="key-status"></div>
+    <div class="modal-foot">
+      <button class="btn-primary" id="save-key">Save &amp; verify</button>
+    </div>
+  </div>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

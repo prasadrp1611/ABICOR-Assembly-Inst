@@ -1,0 +1,8 @@
+# Optional — enables the "SAM segmentation" highlight mode (real Segment Anything
+# via HuggingFace). Heavy (~2 GB incl. weights). Install only if you want it:
+#   pip install -r requirements-sam.txt
+# CPU build of torch:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+transformers>=4.40
+Pillow>=10

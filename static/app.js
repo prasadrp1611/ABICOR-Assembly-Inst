@@ -1,6 +1,9 @@
 const $ = (s) => document.querySelector(s);
 let pollTimer = null;
 let currentJob = null;
+let CONFIGURED = false;
+let SAM_AVAILABLE = false;
+let HL_MODE = "box";
 
 // ---- file pickers (click + drag/drop, single dialog) ----
 function wireDrop(dropId, inputId, nameId, label) {
@@ -37,6 +40,7 @@ wireDrop("pdf-drop", "parts_pdf", "pdf-name", "optional · enables Part-ID match
 // ---- submit ----
 $("#job-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!CONFIGURED) { openSettings(); return; }
   const video = $("#video").files[0];
   if (!video) {
     $("#video-drop").classList.add("missing");
@@ -118,6 +122,19 @@ async function showResult() {
   $("#new-job").addEventListener("click", () => location.reload());
   root.querySelectorAll(".hl-btn").forEach((b) =>
     b.addEventListener("click", () => toggleHighlight(b)));
+  // highlight-mode selector
+  const samBtn = $("#sam-btn");
+  if (samBtn && !SAM_AVAILABLE) {
+    samBtn.disabled = true;
+    samBtn.title = "SAM backend not installed (pip install -r requirements-sam.txt)";
+  }
+  $("#hl-mode") && $("#hl-mode").querySelectorAll("button").forEach((b) =>
+    b.addEventListener("click", () => {
+      if (b.disabled) return;
+      HL_MODE = b.dataset.mode;
+      $("#hl-mode").querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+    }));
   resetForm();
   root.scrollIntoView({ behavior: "smooth" });
 }
@@ -125,30 +142,33 @@ async function showResult() {
 async function toggleHighlight(btn) {
   const step = btn.dataset.step;
   const img = document.getElementById(`img-${step}`);
-  // toggle back to original if already highlighted
-  if (btn.dataset.on === "1") {
+  const mode = HL_MODE;
+  // currently showing this same mode -> revert to original
+  if (btn.dataset.shown === mode) {
     img.src = img.dataset.orig;
-    btn.dataset.on = "0";
+    btn.dataset.shown = "";
     btn.textContent = "🔍 Highlight parts";
     return;
   }
-  if (btn.dataset.hl) {            // cached highlighted image
-    img.src = btn.dataset.hl;
-    btn.dataset.on = "1";
+  const cacheKey = "hl_" + mode;
+  if (btn.dataset[cacheKey]) {
+    img.src = btn.dataset[cacheKey];
+    btn.dataset.shown = mode;
     btn.textContent = "↩ Show original";
     return;
   }
   btn.disabled = true;
-  btn.textContent = "Locating parts…";
+  btn.textContent = mode === "sam" ? "Segmenting (SAM)…" : "Locating parts…";
   try {
-    const r = await fetch(`/api/jobs/${currentJob}/highlight?step=${step}`);
+    const r = await fetch(`/api/jobs/${currentJob}/highlight?step=${step}&mode=${mode}`);
     if (!r.ok) throw new Error("highlight failed");
     const d = await r.json();
     const url = d.url + "?t=" + Date.now();
-    btn.dataset.hl = url;
+    btn.dataset[cacheKey] = url;
     img.src = url;
-    btn.dataset.on = "1";
-    btn.textContent = d.count ? `↩ Show original (${d.count} parts)` : "↩ Show original";
+    btn.dataset.shown = mode;
+    const tag = d.mode === "sam" ? "SAM" : "boxes";
+    btn.textContent = d.count ? `↩ Show original (${d.count} · ${tag})` : "↩ Show original";
   } catch (e) {
     btn.textContent = "🔍 Highlight parts";
   }
@@ -177,6 +197,13 @@ function renderDoc(d) {
         <button class="btn-primary" id="open-editor">📝 Open in Word Editor</button>
         <button class="btn-ghost" id="dl-json">⬇ Download JSON</button>
         <button class="btn-ghost" id="new-job">+ New video</button>
+      </div>
+      <div class="mode-row">
+        <span class="lbl">Part highlighting:</span>
+        <div class="hl-mode" id="hl-mode">
+          <button data-mode="box" class="active">Boxes</button>
+          <button data-mode="sam" id="sam-btn">SAM segmentation</button>
+        </div>
       </div>
     </div>`;
 
@@ -277,3 +304,48 @@ function download(name, obj) {
   a.click();
   URL.revokeObjectURL(a.href);
 }
+
+// ---- settings / API key + capabilities ----
+function openSettings() {
+  $("#settings").classList.remove("hidden");
+  setTimeout(() => $("#api-key").focus(), 50);
+}
+function closeSettings() { $("#settings").classList.add("hidden"); }
+$("#open-settings").addEventListener("click", openSettings);
+$("#settings-close").addEventListener("click", closeSettings);
+$("#settings").addEventListener("click", (e) => { if (e.target.id === "settings") closeSettings(); });
+
+$("#save-key").addEventListener("click", async () => {
+  const key = $("#api-key").value.trim();
+  const st = $("#key-status");
+  if (!key) { st.className = "key-status err"; st.textContent = "Please paste a key."; return; }
+  st.className = "key-status"; st.textContent = "Verifying…";
+  $("#save-key").disabled = true;
+  try {
+    const r = await fetch("/api/config", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gemini_api_key: key }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || "Could not verify key");
+    CONFIGURED = true;
+    st.className = "key-status ok"; st.textContent = "Connected ✓";
+    setTimeout(closeSettings, 700);
+  } catch (e) {
+    st.className = "key-status err"; st.textContent = e.message;
+  }
+  $("#save-key").disabled = false;
+});
+
+async function boot() {
+  try {
+    const c = await (await fetch("/api/config")).json();
+    CONFIGURED = !!c.configured;
+  } catch (e) {}
+  try {
+    const cap = await (await fetch("/api/capabilities")).json();
+    SAM_AVAILABLE = !!cap.sam;
+  } catch (e) {}
+  if (!CONFIGURED) openSettings();
+}
+boot();

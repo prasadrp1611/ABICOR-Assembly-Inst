@@ -22,9 +22,17 @@ from schema import AssemblyDocument
 from pipeline import process_job, write_status, ts_to_seconds, extract_frame
 import docx_export
 import vision
+import sam_backend
 
 app = FastAPI(title="ABICOR Assembly-Doc Generator")
 STATIC = config.APP_DIR / "static"
+
+
+@app.on_event("startup")
+def _warm_sam():
+    # pre-load SAM weights in the background so the first highlight isn't slow
+    if sam_backend.available():
+        threading.Thread(target=sam_backend.warmup, daemon=True).start()
 
 
 def _run_job(job_id: str, options: dict):
@@ -41,6 +49,27 @@ def get_schema():
     return AssemblyDocument.model_json_schema()
 
 
+@app.get("/api/config")
+def get_config():
+    return {"configured": config.has_key()}
+
+
+@app.post("/api/config")
+def set_config(body: dict = Body(...)):
+    key = (body.get("gemini_api_key") or "").strip()
+    if not key:
+        raise HTTPException(400, "Please paste an API key.")
+    if not config.validate_key(key):
+        raise HTTPException(400, "That key was rejected — check it and try again.")
+    config.set_api_key(key)
+    return {"ok": True, "configured": True}
+
+
+@app.get("/api/capabilities")
+def capabilities():
+    return {"sam": sam_backend.available()}
+
+
 @app.post("/api/jobs")
 async def create_job(
     video: UploadFile = File(...),
@@ -49,6 +78,8 @@ async def create_job(
     product_model: str = Form(""),
     product_id: str = Form(""),
 ):
+    if not config.has_key():
+        raise HTTPException(400, "API key not configured. Open Settings and add your key.")
     job_id = uuid.uuid4().hex[:12]
     job_dir = config.JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -217,8 +248,9 @@ def ontology_png(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/highlight")
-def highlight(job_id: str, step: int):
+def highlight(job_id: str, step: int, mode: str = "box"):
     """Locate & highlight the step's components in its frame (lazy, cached)."""
+    mode = mode if mode in ("box", "sam") else "box"
     data = _load_result(job_id)
     job_dir = config.JOBS_DIR / job_id
     frames = job_dir / "frames"
@@ -233,16 +265,16 @@ def highlight(job_id: str, step: int):
     src = frames / f"step_{step:02d}.jpg"
     if not src.exists():
         raise HTTPException(404, "frame not found")
-    out = frames / f"step_{step:02d}_hl.jpg"
+    out = frames / f"step_{step:02d}_hl_{mode}.jpg"
 
     labels = [c["name"] for c in target.get("components", [])]
     labels += target.get("tools", [])
     client = config.get_client()
-    dets = vision.detect_parts(client, str(src), labels)
-    res = vision.annotate(str(src), dets, str(out))
+    res = vision.highlight(client, str(src), labels, mode, str(out))
     return {"url": f"/api/jobs/{job_id}/frames/{out.name}",
             "detections": res.get("detections", []),
-            "count": len(res.get("detections", []))}
+            "count": len(res.get("detections", [])),
+            "mode": res.get("mode", mode)}
 
 
 # static assets (css/js) served under /static

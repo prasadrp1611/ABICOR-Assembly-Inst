@@ -24,8 +24,11 @@ against a spare-parts PDF.
 - **Deictic grounding:** every "this/that/here/das/hier" is mapped to the real part.
 - **Part-ID matching:** if a spare-parts PDF is supplied, components are matched to
   official part numbers by embedding similarity, with a confidence score.
-- **Part highlighting:** on demand, the engine localises a step's parts in its frame
-  and overlays labelled highlight boxes.
+- **Part highlighting:** on demand, the engine localises a step's parts in its frame.
+  Two selectable modes — **Boxes** (fast) or **SAM segmentation** (pixel-accurate
+  masks via HuggingFace SAM, prompted by the engine's box). SAM is optional:
+  `pip install -r requirements-sam.txt`.
+- **In-app key:** paste your API key in the Settings dialog at runtime — no `.env` edit needed.
 - **Ontology:** an auto-extracted knowledge graph (parts/tools/actions + typed
   relationships) rendered as a diagram.
 - **Word editor:** an in-browser editor (`/editor`) to refine text, choose/upload
