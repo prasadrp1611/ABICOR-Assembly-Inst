@@ -126,7 +126,8 @@ function resetForm() {
 
 // ---- render result ----
 let resultData = null;
-const chosenFrame = {};   // step -> frame filename, or null = show video snippet
+const chosenFrame = {};    // step -> picked frame filename, or null = video snippet
+const currentImage = {};   // step -> filename currently displayed (frame OR segmented), null = video
 
 const secOf = (ts) => {
   const p = String(ts).split(":").map(Number);
@@ -172,6 +173,7 @@ function initSteps() {
     const vid = document.getElementById(`vid-${n}`);
     const still = document.getElementById(`img-${n}`);
     chosenFrame[n] = null;
+    currentImage[n] = null;
 
     // section video snippet via media fragment (autoplay + loop the fragment, muted)
     vid.src = `/api/jobs/${currentJob}/video#t=${start},${end}`;
@@ -220,14 +222,14 @@ function onFrameSel(n, sel) {
   const v = sel.value;
   const badge = document.getElementById(`badge-${n}`);
   if (v === "__video") {
-    chosenFrame[n] = null; showVideo(n);
+    chosenFrame[n] = null; currentImage[n] = null; showVideo(n);
     document.getElementById(`vid-${n}`).play().catch(() => {});
     badge.textContent = "▶ section";
   } else {
     const frame = v === "__default" ? defFrame(n) : v;
-    chosenFrame[n] = frame;
+    chosenFrame[n] = frame; currentImage[n] = frame;
     showStill(n, frameURL(frame));
-    badge.textContent = "🖼 frame";
+    badge.textContent = "🖼 frame · in doc";
     const psel = document.querySelector(`.part-sel[data-step="${n}"]`);
     if (psel && psel.value) onPartSel(n, psel);    // re-highlight on the new frame
   }
@@ -237,9 +239,9 @@ async function onPartSel(n, sel) {
   const v = sel.value;
   const badge = document.getElementById(`badge-${n}`);
   if (!v) {                                         // off -> back to frame or video
-    if (chosenFrame[n]) showStill(n, frameURL(chosenFrame[n]));
-    else { showVideo(n); document.getElementById(`vid-${n}`).play().catch(() => {}); }
-    badge.textContent = chosenFrame[n] ? "🖼 frame" : "▶ section";
+    if (chosenFrame[n]) { showStill(n, frameURL(chosenFrame[n])); currentImage[n] = chosenFrame[n]; }
+    else { showVideo(n); document.getElementById(`vid-${n}`).play().catch(() => {}); currentImage[n] = null; }
+    badge.textContent = chosenFrame[n] ? "🖼 frame · in doc" : "▶ section";
     return;
   }
   const label = v === "__all" ? "" : v;
@@ -249,9 +251,10 @@ async function onPartSel(n, sel) {
     const q = `step=${n}&mode=${HL_MODE}&frame=${encodeURIComponent(frame)}` +
               (label ? `&label=${encodeURIComponent(label)}` : "");
     const d = await (await fetch(`/api/jobs/${currentJob}/highlight?${q}`)).json();
+    currentImage[n] = d.url.split("?")[0].split("/").pop();   // segmented image -> used in docx
     showStill(n, d.url + "?t=" + Date.now());
     const tag = d.mode === "sam" ? (d.backend || "SAM").toUpperCase() : "boxes";
-    badge.textContent = d.count ? `🎯 ${d.detections.join(", ")} · ${tag}` : `no match · ${tag}`;
+    badge.textContent = d.count ? `🎯 ${d.detections.join(", ")} · ${tag} · in doc` : `no match · ${tag}`;
   } catch (e) { badge.textContent = "⚠ failed"; }
 }
 
@@ -300,7 +303,7 @@ function buildExportModel() {
       title: tEl ? tEl.textContent.trim() : s.title,
       goal: s.goal,
       bullets: bullets.length ? bullets : s.instructions.map((i) => i.text),
-      image: chosenFrame[n] || defFrame(n),
+      image: currentImage[n] || chosenFrame[n] || defFrame(n),
       narration_de: (s.narration && s.narration.original_text) || "",
       narration_en: (s.narration && s.narration.english_text) || "",
       parts: (s.components || []).filter((c) => c.part_id).map((c) => ({ name: c.name, part_no: c.part_id })),
