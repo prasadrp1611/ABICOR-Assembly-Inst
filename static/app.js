@@ -80,6 +80,7 @@ $("#job-form").addEventListener("submit", async (e) => {
     const { job_id } = await r.json();
     currentJob = job_id;
     $("#upload-card").classList.add("hidden");
+    $("#howto-card") && $("#howto-card").classList.add("hidden");
     $("#progress-card").classList.remove("hidden");
     $("#result").classList.add("hidden");
     if (FUN) funAudio.play().catch(() => {});
