@@ -521,13 +521,56 @@ def _limit_body(request: Request, max_bytes: int):
         raise HTTPException(413, "Request too large.")
 
 
+def _create_github_issue(rec: dict):
+    """Best-effort: file the incident as a GitHub issue when GITHUB_TOKEN + GITHUB_REPO
+    ('owner/repo') are set. Pure data → an issue; no LLM on this path. Rocky acts on it."""
+    import os
+    token = (os.getenv("GITHUB_TOKEN") or "").strip()
+    repo = (os.getenv("GITHUB_REPO") or "").strip()
+    if not token or not repo:
+        return None
+    msg = (rec.get("message") or "").strip()
+    title = (msg.splitlines()[0][:80] if msg else "") or f"User-reported problem {rec['id']}"
+    lines = [
+        f"_Filed automatically from the in-app report widget · incident `{rec['id']}` · "
+        f"build `{rec.get('app_commit', '?')}`_", "",
+        "**What happened**", msg or "_(no description)_", "",
+        f"- Route: `{rec.get('route', '')}`",
+        f"- Job: `{rec.get('job_id') or '-'}`",
+        f"- Browser: `{rec.get('user_agent', '')[:200]}`",
+    ]
+    if rec.get("console_errors"):
+        lines += ["", "**Console errors**", "```", *rec["console_errors"][:10], "```"]
+    if rec.get("failed_requests"):
+        lines += ["", "**Failed requests**"] + \
+                 [f"- `{f['method']} {f['path']}` → {f['status']}" for f in rec["failed_requests"][:10]]
+    if rec.get("transcript"):
+        lines += ["", "**Support chat**"] + \
+                 [f"> **{m.get('role')}:** {m.get('content')}" for m in rec["transcript"][:20]]
+    try:
+        import httpx
+        r = httpx.post(
+            f"https://api.github.com/repos/{repo}/issues",
+            headers={"Authorization": f"Bearer {token}",
+                     "Accept": "application/vnd.github+json",
+                     "X-GitHub-Api-Version": "2022-11-28"},
+            json={"title": title, "body": "\n".join(lines), "labels": ["support", "from-app"]},
+            timeout=15)
+        if r.status_code in (200, 201):
+            return r.json().get("html_url")
+    except Exception:
+        pass
+    return None
+
+
 @app.post("/api/incidents")
 async def report_incident(request: Request, payload: dict = Body(...)):
+    """Dumb 'Report a problem' intake. Validates shape, redacts, writes to the incident
+    queue, and (if GITHUB_TOKEN+GITHUB_REPO are set) files a GitHub issue Rocky acts on.
+    No LLM / no code execution on this path — that's what keeps it injection-safe.
+    Never accepts or stores auth headers / access codes / keys."""
     _limit_body(request, 8_000_000)        # text fields + one optional screenshot
-    """Dumb 'Report a problem' intake. It only validates shape, redacts, and writes
-    to the incident queue that the external support bot (Rocky) reads on the box.
-    No LLM and no code execution on this path — that's what keeps it safe from
-    prompt-injection. Never accepts or stores auth headers / access codes / keys."""
+    _throttle("incident", request.client.host if request.client else "?", 8, 600)
     inc_dir = config.DATA_DIR / "incidents"
     inc_dir.mkdir(exist_ok=True)
     iid = uuid.uuid4().hex[:12]
@@ -570,9 +613,12 @@ async def report_incident(request: Request, payload: dict = Body(...)):
             rec["screenshot"] = f"incident_{iid}.{ext}"
         except Exception:
             pass
+    issue_url = _create_github_issue(rec)      # best-effort; no-op unless a repo token is set
+    if issue_url:
+        rec["issue_url"] = issue_url
     (inc_dir / f"incident_{iid}.json").write_text(
         json.dumps(rec, indent=2, ensure_ascii=False), encoding="utf-8")
-    return {"ok": True, "id": iid}
+    return {"ok": True, "id": iid, "issue_url": issue_url}
 
 
 # --------------------------------------------------------------- support chat
@@ -602,16 +648,17 @@ detail (what they did, what they expected, what happened).
 - Never ask for or accept passwords, keys or access codes.
 - Keep replies short."""
 
-_SUPPORT_HITS: dict[str, list] = {}
+_RATE: dict = {}
 
 
-def _throttle(ip: str, limit: int = 20, window: int = 300):
+def _throttle(bucket: str, ip: str, limit: int, window: int):
     now = time.time()
-    hits = [t for t in _SUPPORT_HITS.get(ip, []) if now - t < window]
+    key = (bucket, ip)
+    hits = [t for t in _RATE.get(key, []) if now - t < window]
     if len(hits) >= limit:
-        raise HTTPException(429, "Too many messages — please slow down for a moment.")
+        raise HTTPException(429, "Too many requests — please slow down for a moment.")
     hits.append(now)
-    _SUPPORT_HITS[ip] = hits
+    _RATE[key] = hits
 
 
 @app.post("/api/support/chat")
@@ -621,7 +668,7 @@ def support_chat(request: Request, body: dict = Body(...), _acc=Depends(access_g
     _limit_body(request, 512_000)
     if not config.has_key():
         raise HTTPException(503, "The support assistant is offline right now.")
-    _throttle(request.client.host if request.client else "?")
+    _throttle("support", request.client.host if request.client else "?", 20, 300)
 
     contents = []
     for m in (body.get("messages") or [])[-10:]:

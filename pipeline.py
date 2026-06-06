@@ -52,11 +52,18 @@ def write_status(job_dir: Path, **fields):
 
 # --------------------------------------------------------------------------- stages
 def analyze_video(client, video_path: str, progress, extra: str = "") -> dict:
-    progress(stage="uploading", progress=10,
-             message="Ingesting media…")
+    progress(stage="uploading", progress=10, message="Ingesting media…")
     vfile = client.files.upload(file=video_path)
+    waited = 0
     while vfile.state.name == "PROCESSING":
-        time.sleep(4)
+        if waited >= 600:                      # 10-min ceiling — never hang forever
+            raise RuntimeError("Media ingest timed out — the video took too long to "
+                               "process. Try a shorter clip, or use the 'Long video?' "
+                               "split option for long recordings.")
+        time.sleep(4); waited += 4
+        # heartbeat so the bar visibly moves instead of freezing at 10%
+        progress(stage="uploading", progress=min(30, 10 + waited // 8),
+                 message=f"Ingesting media… ({waited}s — large videos take a little longer)")
         vfile = client.files.get(name=vfile.name)
     if vfile.state.name == "FAILED":
         raise RuntimeError("media processing failed")
@@ -185,8 +192,11 @@ def extract_parts_table(client, pdf_path: str) -> list:
     """Extract any parts/components with part numbers from a product document.
     Works for a BoM, spare-parts list, datasheet, manual, or assembly drawing."""
     pf = client.files.upload(file=pdf_path)
+    waited = 0
     while pf.state.name == "PROCESSING":
-        time.sleep(2)
+        if waited >= 180:                      # don't hang the job on a slow PDF
+            raise RuntimeError("Document ingest timed out — try a smaller PDF.")
+        time.sleep(2); waited += 2
         pf = client.files.get(name=pf.name)
     prompt = (
         "This document is product documentation — it may be a Bill of Materials, "
