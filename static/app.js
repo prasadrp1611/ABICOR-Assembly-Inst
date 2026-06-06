@@ -57,6 +57,11 @@ function toggleFun() {
 $("#fun-btn").addEventListener("click", toggleFun);
 
 // ---- file pickers (click + drag/drop, single dialog) ----
+// If the access key/code isn't set yet, prompt for it first — before they pick a file.
+function requireKey() {
+  if (!CONFIGURED) { openSettings(); return true; }
+  return false;
+}
 function wireDrop(dropId, inputId, nameId, label) {
   const drop = $("#" + dropId), input = $("#" + inputId), name = $("#" + nameId);
   const show = () => {
@@ -71,10 +76,10 @@ function wireDrop(dropId, inputId, nameId, label) {
       drop.classList.remove("set");
     }
   };
-  // open the native dialog exactly once
-  drop.addEventListener("click", () => input.click());
+  // open the native dialog exactly once — but ask for the access key first if missing
+  drop.addEventListener("click", () => { if (requireKey()) return; input.click(); });
   drop.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); }
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (requireKey()) return; input.click(); }
   });
   input.addEventListener("change", show);
   // drag & drop
@@ -85,6 +90,7 @@ function wireDrop(dropId, inputId, nameId, label) {
   drop.addEventListener("drop", (e) => {
     e.preventDefault();
     drop.classList.remove("drag");
+    if (requireKey()) return;
     if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; show(); }
   });
 }
@@ -94,7 +100,7 @@ wireDrop("pdf-drop", "parts_pdf", "pdf-name", "optional · BoM / spare parts / d
 // ---- submit ----
 $("#job-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!CONFIGURED) { openSettings(); return; }
+  if (requireKey()) return;
   const video = $("#video").files[0];
   if (!video) {
     $("#video-drop").classList.add("missing");
