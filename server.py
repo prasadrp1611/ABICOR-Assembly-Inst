@@ -287,6 +287,17 @@ def job_result(job_id: str):
     return JSONResponse(json.loads(rf.read_text(encoding="utf-8")))
 
 
+@app.post("/api/jobs/{job_id}/archive")
+def archive_job(job_id: str, body: dict = Body(...)):
+    """Archive / unarchive a session (shown collapsed in the sidebar)."""
+    job_dir = config.JOBS_DIR / job_id
+    if not (job_dir / "status.json").exists():
+        raise HTTPException(404, "job not found")
+    arch = bool(body.get("archived", True))
+    write_status(job_dir, archived=arch)
+    return {"ok": True, "archived": arch}
+
+
 @app.post("/api/jobs/{job_id}/rerun")
 def rerun_job(job_id: str, body: dict = Body(...), x_access_code: str = Header(default="")):
     """Re-run analysis on the already-uploaded video with extra prompt instructions."""

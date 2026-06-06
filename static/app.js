@@ -126,6 +126,7 @@ $("#job-form").addEventListener("submit", async (e) => {
     const { job_id } = await r.json();
     currentJob = job_id;
     window.currentJob = job_id;   // expose for the Report-a-problem widget
+    loadSessions();               // new session appears in the sidebar
     $("#upload-card").classList.add("hidden");
     if (!FUN) $("#howto-card") && $("#howto-card").classList.add("hidden");  // fun: keep party video playing
     $("#progress-card").classList.remove("hidden");
@@ -217,6 +218,7 @@ const frameURL = (name) => name && name.startsWith("up_")
   ? `/api/jobs/${currentJob}/uploads/${name}` : `/api/jobs/${currentJob}/frames/${name}`;
 
 async function showResult() {
+  loadSessions();
   resultData = await (await fetch(`/api/jobs/${currentJob}/result`)).json();
   $("#howto-card") && $("#howto-card").classList.add("hidden");   // stop the meme when results show
   templateSettings = null;
@@ -820,6 +822,86 @@ $("#save-key").addEventListener("click", async () => {
   $("#save-key").disabled = false;
 });
 
+// ---- session sidebar (all past / active / archived documents) ----
+const fmtWhen = (t) => {
+  if (!t) return "";
+  const d = new Date(t * 1000), diff = Date.now() / 1000 - t;
+  if (diff < 3600) return Math.max(1, Math.floor(diff / 60)) + "m ago";
+  if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+  return d.toLocaleDateString();
+};
+function sessionName(j) {
+  const o = j.options || {};
+  return o.product_model || o.product_name || (j.video || "").replace(/\.[^.]+$/, "")
+    || ("Document " + (j.id || "").slice(0, 6));
+}
+function badgeFor(j) {
+  if (j.status === "done") return '<span class="sb-badge done">done</span>';
+  if (j.status === "error") return '<span class="sb-badge err">error</span>';
+  return '<span class="sb-badge run">…</span>';
+}
+async function loadSessions() {
+  const list = $("#session-list");
+  if (!list) return;
+  let jobs = [];
+  try { jobs = await (await fetch("/api/jobs")).json(); } catch (e) { return; }
+  if (!jobs.length) {
+    list.innerHTML = '<div class="sb-empty">No documents yet.<br>Click “＋ New document”.</div>';
+    return;
+  }
+  const card = (j) => `<div class="sb-card${j.id === currentJob ? " active" : ""}" data-id="${j.id}">
+      <img class="sb-thumb" src="/api/jobs/${j.id}/frames/step_01.jpg"
+           onerror="this.src='/static/genius.png'"/>
+      <div class="sb-meta">
+        <div class="sb-name">${esc(sessionName(j))}</div>
+        <div class="sb-sub">${fmtWhen(j.created_at)}</div>
+      </div>
+      ${badgeFor(j)}
+      <button class="sb-arch-btn" data-arch="${j.id}" data-to="${j.archived ? 0 : 1}"
+        title="${j.archived ? "Restore" : "Archive"}">${j.archived ? "↩" : "🗄"}</button>
+    </div>`;
+  const active = jobs.filter((j) => !j.archived), archived = jobs.filter((j) => j.archived);
+  let html = active.map(card).join("");
+  if (archived.length) html += '<div class="sb-sec">Archived</div>' + archived.map(card).join("");
+  list.innerHTML = html;
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("[data-arch]");
+  if (a) { e.stopPropagation(); archiveSession(a.dataset.arch, a.dataset.to === "1"); return; }
+  const c = e.target.closest(".sb-card");
+  if (c) openSession(c.dataset.id);
+});
+async function archiveSession(id, to) {
+  try {
+    await fetch(`/api/jobs/${id}/archive`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: to }),
+    });
+  } catch (e) {}
+  loadSessions();
+}
+async function openSession(id) {
+  currentJob = id; window.currentJob = id;
+  $("#upload-card") && $("#upload-card").classList.add("hidden");
+  $("#howto-card") && $("#howto-card").classList.add("hidden");
+  let s = {};
+  try { s = await (await fetch(`/api/jobs/${id}`)).json(); } catch (e) {}
+  if (s.status === "done") showResult();
+  else if (s.status === "error") showError(s);
+  else { $("#result").classList.add("hidden"); $("#progress-card").classList.remove("hidden"); poll(); }
+  loadSessions();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function showUpload() {
+  currentJob = null; window.currentJob = null;
+  $("#result") && $("#result").classList.add("hidden");
+  $("#progress-card") && $("#progress-card").classList.add("hidden");
+  $("#upload-card") && $("#upload-card").classList.remove("hidden");
+  if (!FUN) $("#howto-card") && $("#howto-card").classList.remove("hidden");
+  loadSessions();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 async function boot() {
   try {
     const c = await (await fetch("/api/config")).json();
@@ -844,6 +926,9 @@ async function boot() {
     SAM_AVAILABLE = !!cap.sam;
   } catch (e) {}
   applySettingsCopy();
+  loadSessions();
+  setInterval(loadSessions, 8000);
+  $("#sb-new") && $("#sb-new").addEventListener("click", showUpload);
   if (!CONFIGURED) openSettings();
 }
 boot();
