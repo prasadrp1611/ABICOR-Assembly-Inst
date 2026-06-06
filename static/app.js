@@ -23,7 +23,10 @@ $("#fun-btn").addEventListener("click", () => {
 function wireDrop(dropId, inputId, nameId, label) {
   const drop = $("#" + dropId), input = $("#" + inputId), name = $("#" + nameId);
   const show = () => {
-    if (input.files.length) {
+    if (input.files.length > 1) {
+      name.textContent = `${input.files.length} files selected`;
+      drop.classList.add("set");
+    } else if (input.files.length === 1) {
       name.textContent = input.files[0].name;
       drop.classList.add("set");
     } else {
@@ -49,7 +52,7 @@ function wireDrop(dropId, inputId, nameId, label) {
   });
 }
 wireDrop("video-drop", "video", "video-name", "drag & drop or click · mp4 · mov");
-wireDrop("pdf-drop", "parts_pdf", "pdf-name", "optional · enables Part-ID matching");
+wireDrop("pdf-drop", "parts_pdf", "pdf-name", "optional · BoM / spare parts / datasheets · multiple");
 
 // ---- submit ----
 $("#job-form").addEventListener("submit", async (e) => {
@@ -63,7 +66,7 @@ $("#job-form").addEventListener("submit", async (e) => {
   }
   const fd = new FormData();
   fd.append("video", video);
-  if ($("#parts_pdf").files[0]) fd.append("parts_pdf", $("#parts_pdf").files[0]);
+  for (const pf of $("#parts_pdf").files) fd.append("parts_pdf", pf);
   fd.append("product_name", $("#product_name").value);
   fd.append("product_model", $("#product_model").value);
   fd.append("product_id", $("#product_id").value);

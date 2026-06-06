@@ -165,15 +165,20 @@ def extract_all_frames(video_path: str, data: dict, frames_dir: Path, progress):
 
 
 def extract_parts_table(client, pdf_path: str) -> list:
+    """Extract any parts/components with part numbers from a product document.
+    Works for a BoM, spare-parts list, datasheet, manual, or assembly drawing."""
     pf = client.files.upload(file=pdf_path)
     while pf.state.name == "PROCESSING":
         time.sleep(2)
         pf = client.files.get(name=pf.name)
     prompt = (
-        "This PDF is an official spare-parts list (exploded view + parts table). "
-        "Extract the COMPLETE parts table. For every row return item (string), "
-        "part_no (exact), description. Return ONLY JSON: "
-        '{"parts":[{"item":"...","part_no":"...","description":"..."}]}'
+        "This document is product documentation — it may be a Bill of Materials, "
+        "spare-parts list, datasheet, manual, or exploded-view assembly drawing. "
+        "Extract EVERY part or component that has an identifiable part number / "
+        "article number / order code. For each return: item (the item number or "
+        "label if shown, else \"\"), part_no (the part/article number exactly as "
+        "written), description. Ignore rows with no part number. "
+        'Return ONLY JSON: {"parts":[{"item":"...","part_no":"...","description":"..."}]}'
     )
     r = client.models.generate_content(
         model=config.MODEL, contents=[pf, prompt],
@@ -183,7 +188,27 @@ def extract_parts_table(client, pdf_path: str) -> list:
     t = r.text
     if "```json" in t: t = t.split("```json")[1].split("```")[0].strip()
     elif "```" in t:   t = t.split("```")[1].split("```")[0].strip()
-    return json.loads(t).get("parts", [])
+    try:
+        return json.loads(t).get("parts", [])
+    except Exception:
+        return []
+
+
+def extract_parts_from_docs(client, paths: list, progress) -> list:
+    """Extract + merge parts from one or more product documents (deduped by part_no)."""
+    merged, seen = [], set()
+    n = len(paths)
+    for i, p in enumerate(paths):
+        progress(stage="matching_parts", progress=72 + int(6 * i / max(1, n)),
+                 message=f"Reading product document {i + 1} of {n}…")
+        for pt in extract_parts_table(client, str(p)):
+            key = (str(pt.get("part_no", "")).strip().lower()
+                   or str(pt.get("description", "")).strip().lower())
+            if key and key not in seen:
+                seen.add(key)
+                pt["source_doc"] = Path(p).name
+                merged.append(pt)
+    return merged
 
 
 def match_parts(client, data: dict, parts: list, progress):
@@ -263,10 +288,13 @@ def process_job(job_id: str, options: dict):
 
         extract_all_frames(video_path, data, frames_dir, progress)
 
-        parts_pdf = options.get("parts_filename")
-        if parts_pdf:
-            parts = extract_parts_table(client, str(job_dir / parts_pdf))
-            data = match_parts(client, data, parts, progress)
+        parts_files = options.get("parts_filenames") or (
+            [options["parts_filename"]] if options.get("parts_filename") else [])
+        if parts_files:
+            parts = extract_parts_from_docs(client, [job_dir / p for p in parts_files], progress)
+            if parts:
+                data = match_parts(client, data, parts, progress)
+                data["source_documents"] = parts_files
 
         # ontology / knowledge graph (supplementary — never fails the job)
         if vfile is not None:

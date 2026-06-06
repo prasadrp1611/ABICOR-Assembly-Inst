@@ -99,7 +99,7 @@ def capabilities():
 @app.post("/api/jobs")
 async def create_job(
     video: UploadFile = File(...),
-    parts_pdf: UploadFile | None = File(None),
+    parts_pdf: list[UploadFile] = File(default=[]),
     product_name: str = Form(""),
     product_model: str = Form(""),
     product_id: str = Form(""),
@@ -144,14 +144,22 @@ async def create_job(
             "chunk_minutes": chunk_minutes,
         }
 
-        if parts_pdf is not None and parts_pdf.filename:
-            parts_name = safe_filename(parts_pdf.filename, "parts.pdf")
-            await save_upload(parts_pdf, job_dir / parts_name)
-            options["parts_filename"] = parts_name
+        parts_names = []
+        for pf in (parts_pdf or []):
+            if pf is None or not pf.filename:
+                continue
+            pname = safe_filename(pf.filename, f"doc_{len(parts_names)+1}.pdf")
+            # avoid collisions if two docs share a sanitized name
+            if pname in parts_names:
+                pname = f"{len(parts_names)+1}_{pname}"
+            await save_upload(pf, job_dir / pname)
+            parts_names.append(pname)
+        if parts_names:
+            options["parts_filenames"] = parts_names
 
         write_status(job_dir, id=job_id, status="queued", stage="queued",
                      progress=0, message="Queued…", created_at=time.time(),
-                     video=video_name, has_parts=bool(options.get("parts_filename")),
+                     video=video_name, has_parts=bool(options.get("parts_filenames")),
                      options=options)
         _run_job(job_id, options)
         return {"job_id": job_id}
