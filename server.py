@@ -30,9 +30,15 @@ STATIC = config.APP_DIR / "static"
 
 @app.on_event("startup")
 def _warm_sam():
-    # pre-load SAM weights in the background so the first highlight isn't slow
-    if sam_backend.available():
-        threading.Thread(target=sam_backend.warmup, daemon=True).start()
+    # Pre-load SAM weights in the background. The torch import + model load happen
+    # entirely inside the thread so server startup (and request readiness) is instant.
+    def _w():
+        try:
+            if sam_backend.available():
+                sam_backend.warmup()
+        except Exception:
+            pass
+    threading.Thread(target=_w, daemon=True).start()
 
 
 def _run_job(job_id: str, options: dict):
@@ -81,36 +87,60 @@ async def create_job(
 ):
     if not config.has_key():
         raise HTTPException(400, "API key not configured. Open Settings and add your key.")
+    if not video or not video.filename:
+        raise HTTPException(400, "No video file provided.")
+
+    # stream the upload to disk in chunks so a large file never blocks the loop
+    async def save_upload(upload: UploadFile, dest: Path) -> int:
+        size = 0
+        try:
+            with open(dest, "wb") as f:
+                while True:
+                    chunk = await upload.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > config.MAX_UPLOAD_BYTES:
+                        raise HTTPException(413, "File too large (limit 2 GB).")
+                    f.write(chunk)
+        finally:
+            await upload.close()
+        if size == 0:
+            raise HTTPException(400, f"Uploaded file '{dest.name}' is empty.")
+        return size
+
     job_id = uuid.uuid4().hex[:12]
     job_dir = config.JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        video_name = Path(video.filename).name or "input.mp4"
+        await save_upload(video, job_dir / video_name)
 
-    # save the video
-    video_name = Path(video.filename).name or "input.mp4"
-    with open(job_dir / video_name, "wb") as f:
-        shutil.copyfileobj(video.file, f)
+        options = {
+            "video_filename": video_name,
+            "product_name": product_name.strip(),
+            "product_model": product_model.strip(),
+            "product_id": product_id.strip(),
+            "chunk_minutes": chunk_minutes,
+        }
 
-    options = {
-        "video_filename": video_name,
-        "product_name": product_name.strip(),
-        "product_model": product_model.strip(),
-        "product_id": product_id.strip(),
-        "chunk_minutes": chunk_minutes,
-    }
+        if parts_pdf is not None and parts_pdf.filename:
+            parts_name = Path(parts_pdf.filename).name
+            await save_upload(parts_pdf, job_dir / parts_name)
+            options["parts_filename"] = parts_name
 
-    # optional parts PDF
-    if parts_pdf is not None and parts_pdf.filename:
-        parts_name = Path(parts_pdf.filename).name
-        with open(job_dir / parts_name, "wb") as f:
-            shutil.copyfileobj(parts_pdf.file, f)
-        options["parts_filename"] = parts_name
-
-    write_status(job_dir, id=job_id, status="queued", stage="queued",
-                 progress=0, message="Queued…", created_at=time.time(),
-                 video=video_name, has_parts=bool(options.get("parts_filename")),
-                 options=options)
-    _run_job(job_id, options)
-    return {"job_id": job_id}
+        write_status(job_dir, id=job_id, status="queued", stage="queued",
+                     progress=0, message="Queued…", created_at=time.time(),
+                     video=video_name, has_parts=bool(options.get("parts_filename")),
+                     options=options)
+        _run_job(job_id, options)
+        return {"job_id": job_id}
+    except HTTPException:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(500, f"Upload failed: {type(e).__name__}")
 
 
 @app.get("/api/jobs")
