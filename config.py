@@ -22,6 +22,17 @@ TEMPERATURE = 0.0
 PART_MATCH_THRESHOLD = 0.62
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 
+# SAM backend preference (first that loads wins). SAM 3 is preferred but gated;
+# the app auto-falls back so it runs everywhere.
+SAM_PREFERENCE = [s.strip() for s in
+                  os.getenv("SAM_PREFERENCE", "sam3,sam2,sam1").split(",") if s.strip()]
+
+
+def hf_token():
+    """HuggingFace token for gated models (e.g. SAM 3). Optional."""
+    return (os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
+            or os.getenv("HUGGINGFACEHUB_API_TOKEN") or "").strip() or None
+
 # Runtime key store (may be set via the in-app Settings dialog)
 _API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip() or None
 

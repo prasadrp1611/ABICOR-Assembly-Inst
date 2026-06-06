@@ -24,6 +24,11 @@ h2{font-size:19px;margin:0 0 14px}
 .gear{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5);color:#fff;
   width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1}
 .gear:hover{background:rgba(255,255,255,.32)}
+.fun{background:transparent;border:0;color:rgba(255,255,255,.25);width:22px;height:34px;
+  cursor:pointer;font-size:14px;line-height:1;padding:0;transition:.2s}
+.fun:hover{color:rgba(255,255,255,.6)}
+.fun.on{color:#ffe14d;text-shadow:0 0 10px #ffd000;animation:funpulse 1s infinite}
+@keyframes funpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.3)}}
 
 /* modal (shared) */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;

@@ -5,6 +5,19 @@ let CONFIGURED = false;
 let SAM_AVAILABLE = false;
 let HL_MODE = "box";
 
+// ---- fun mode (easter egg): plays audio while a job is parsing ----
+let FUN = false;
+const funAudio = new Audio("/static/funmode.mp3");
+funAudio.loop = true;
+funAudio.volume = 0.85;
+function funStop() { try { funAudio.pause(); funAudio.currentTime = 0; } catch (e) {} }
+$("#fun-btn").addEventListener("click", () => {
+  FUN = !FUN;
+  $("#fun-btn").classList.toggle("on", FUN);
+  if (!FUN) funStop();
+  else if (currentJob) funAudio.play().catch(() => {});
+});
+
 // ---- file pickers (click + drag/drop, single dialog) ----
 function wireDrop(dropId, inputId, nameId, label) {
   const drop = $("#" + dropId), input = $("#" + inputId), name = $("#" + nameId);
@@ -65,6 +78,7 @@ $("#job-form").addEventListener("submit", async (e) => {
     $("#upload-card").classList.add("hidden");
     $("#progress-card").classList.remove("hidden");
     $("#result").classList.add("hidden");
+    if (FUN) funAudio.play().catch(() => {});
     poll();
   } catch (err) {
     alert(err.message);
@@ -90,8 +104,8 @@ function poll() {
     .then((s) => {
       $("#bar").style.width = (s.progress || 0) + "%";
       $("#stage-msg").textContent = s.message || STAGES[s.stage] || s.stage;
-      if (s.status === "done") return showResult();
-      if (s.status === "error") return showError(s);
+      if (s.status === "done") { funStop(); return showResult(); }
+      if (s.status === "error") { funStop(); return showError(s); }
       pollTimer = setTimeout(poll, 1800);
     })
     .catch(() => (pollTimer = setTimeout(poll, 2500)));

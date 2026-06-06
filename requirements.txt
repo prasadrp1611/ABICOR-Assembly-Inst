@@ -1,11 +1,15 @@
-fastapi>=0.110
-uvicorn>=0.27
+# ABICOR Assembly-Doc — core requirements
+# Runs on Windows / macOS / Linux, Python 3.10–3.12.
+# opencv-python-headless is used (no system GUI libs needed → portable on servers).
+
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
 python-multipart>=0.0.9
 google-genai>=0.3
-pydantic>=2.6
+pydantic>=2.6,<3.0
 jsonschema>=4.20
-opencv-python>=4.9,<4.12
-numpy>=1.26,<2
+opencv-python-headless>=4.9,<4.12
+numpy>=1.26,<2.0
 pymupdf>=1.24
 python-dotenv>=1.0
 python-docx>=1.1

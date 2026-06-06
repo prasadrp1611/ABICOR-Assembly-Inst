@@ -1,8 +1,16 @@
-# Optional — enables the "SAM segmentation" highlight mode (real Segment Anything
-# via HuggingFace). Heavy (~2 GB incl. weights). Install only if you want it:
-#   pip install -r requirements-sam.txt
-# CPU build of torch:
+# Optional — SAM segmentation backends (SAM 3 / SAM 2.1 / SAM 1).
+# Install:  pip install -r requirements-sam.txt
+#
+# CPU-only torch (recommended for portability — works on any machine):
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# SAM 3 (facebook/sam3) is GATED: accept the license on its HF model page and
+# set HF_TOKEN in your environment. Without it the app automatically falls back
+# to SAM 2.1 (open) or SAM 1 — so segmentation still runs everywhere.
+
 torch>=2.2
-transformers>=4.40
+torchvision>=0.17
+transformers>=5.0
 Pillow>=10
+accelerate>=0.30
+safetensors>=0.4
