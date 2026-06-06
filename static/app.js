@@ -158,6 +158,7 @@ let resultData = null;
 const chosenFrame = {};    // step -> picked frame filename, or null = video snippet
 const currentImage = {};   // step -> filename currently displayed (frame OR segmented), null = video
 let templateSettings = null;   // editable Word-template fields
+let partChoice = {};           // "step:compIndex" -> chosen part number (user override)
 
 const secOf = (ts) => {
   const p = String(ts).split(":").map(Number);
@@ -171,6 +172,10 @@ const frameURL = (name) => name && name.startsWith("up_")
 async function showResult() {
   resultData = await (await fetch(`/api/jobs/${currentJob}/result`)).json();
   templateSettings = null;
+  partChoice = {};
+  for (const st of resultData.stations)
+    for (const s of st.steps)
+      (s.components || []).forEach((c, ci) => { partChoice[`${s.step_number}:${ci}`] = c.part_id || ""; });
   $("#progress-card").classList.add("hidden");
   const root = $("#result");
   root.classList.remove("hidden");
@@ -232,6 +237,24 @@ function initSteps() {
     el.querySelector(".media").addEventListener("click", (e) => {
       if (e.target.closest("select")) return;
       openLightbox(n);
+    });
+
+    // Part-ID pickers (confidence-ranked) + custom override
+    el.querySelectorAll(".part-pick").forEach((sel) => {
+      const ci = sel.dataset.ci;
+      const key = `${n}:${ci}`;
+      const custom = el.querySelector(`.part-custom[data-ci="${ci}"]`);
+      sel.addEventListener("change", () => {
+        if (sel.value === "__custom") {
+          custom.classList.remove("hidden");
+          custom.focus();
+          partChoice[key] = custom.value.trim();
+        } else {
+          if (custom) custom.classList.add("hidden");
+          partChoice[key] = sel.value;
+        }
+      });
+      if (custom) custom.addEventListener("input", () => { partChoice[key] = custom.value.trim(); });
     });
   });
 }
@@ -348,7 +371,11 @@ function buildExportModel() {
       image: currentImage[n] || chosenFrame[n] || defFrame(n),
       narration_de: (s.narration && s.narration.original_text) || "",
       narration_en: (s.narration && s.narration.english_text) || "",
-      parts: (s.components || []).filter((c) => c.part_id).map((c) => ({ name: c.name, part_no: c.part_id })),
+      parts: (s.components || []).map((c, ci) => {
+        const key = `${n}:${ci}`;
+        const pn = key in partChoice ? partChoice[key] : (c.part_id || "");
+        return pn ? { name: c.name, part_no: pn } : null;
+      }).filter(Boolean),
     });
   }));
   return { settings: { ...(templateSettings || defaultTemplate()) }, steps };
@@ -509,6 +536,7 @@ function renderStep(step) {
       <span class="act ${i.action_type}">${i.action_type.replace("_", " ")}</span>
       <span class="pt-text" data-step="${n}">${esc(i.text)}</span></li>`).join("");
 
+  const hasCandidates = (step.components || []).some((c) => c.part_candidates && c.part_candidates.length);
   const comps = (step.components || []).map((c) => {
     let pid = "", conf = "";
     if (c.part_id) pid = `<span class="pid">${esc(c.part_id)}</span>`;
@@ -519,6 +547,27 @@ function renderStep(step) {
       if (!c.part_id) pid = `<span class="pid" title="${esc(m.official_name)}">≈ ${esc(m.part_no)}</span>`;
     }
     return `<span class="chip">${esc(c.name)}${pid}${conf}</span>`;
+  }).join("");
+
+  // when product docs were supplied, show a confidence-ranked Part-ID dropdown per component
+  const compPicks = (step.components || []).map((c, ci) => {
+    const cands = c.part_candidates || [];
+    if (!cands.length) return `<div class="comp-row"><span class="comp-name">${esc(c.name)}</span></div>`;
+    const opts = cands.map((pc) => {
+      const pct = Math.round(pc.confidence * 100);
+      const sel = pc.part_no === c.part_id ? " selected" : "";
+      return `<option value="${esc(pc.part_no)}"${sel}>${esc(pc.part_no)} — ${esc(pc.official_name)} · ${pct}%</option>`;
+    }).join("");
+    return `
+      <div class="comp-row">
+        <span class="comp-name">${esc(c.name)}</span>
+        <select class="part-pick" data-step="${n}" data-ci="${ci}">
+          <option value="">— no part —</option>
+          ${opts}
+          <option value="__custom">✎ Custom…</option>
+        </select>
+        <input class="part-custom hidden" data-step="${n}" data-ci="${ci}" placeholder="part no."/>
+      </div>`;
   }).join("");
 
   const tools = (step.tools || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("");
@@ -560,7 +609,9 @@ function renderStep(step) {
         <span class="ts">${esc(step.timestamp_start)}–${esc(step.timestamp_end)}</span></div>
       <div class="goal">${esc(step.goal || "")}</div>
       <ul class="points">${points}</ul>
-      ${comps ? `<div class="block-label">Components</div><div class="chips">${comps}</div>` : ""}
+      ${hasCandidates
+        ? `<div class="block-label">Components &amp; Part&nbsp;IDs <span class="hint-sm">(pick the correct match)</span></div>${compPicks}`
+        : (comps ? `<div class="block-label">Components</div><div class="chips">${comps}</div>` : "")}
       ${tools ? `<div class="block-label">Tools</div><div class="chips">${tools}</div>` : ""}
       ${deictic ? `<div class="block-label">Resolved references</div>${deictic}` : ""}
       ${tips}${warns}${narr}

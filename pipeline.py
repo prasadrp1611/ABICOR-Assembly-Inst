@@ -233,11 +233,15 @@ def match_parts(client, data: dict, parts: list, progress):
                 if name not in cache:
                     cache[name] = embed(name)
                 q = cache[name]
-                best_p, best_s = None, -1.0
-                for p, v in part_vecs:
-                    s = _cos(q, v)
-                    if s > best_s:
-                        best_s, best_p = s, p
+                # rank ALL candidate parts by confidence, keep the top few
+                scored = sorted(((_cos(q, v), p) for p, v in part_vecs),
+                                key=lambda x: -x[0])[:6]
+                comp["part_candidates"] = [
+                    {"item": p["item"], "part_no": p["part_no"],
+                     "official_name": p["description"], "confidence": round(s, 3),
+                     "source_doc": p.get("source_doc", "")}
+                    for s, p in scored]
+                best_s, best_p = scored[0]
                 confident = best_s >= config.PART_MATCH_THRESHOLD
                 comp["part_match"] = {
                     "item": best_p["item"],
@@ -246,8 +250,8 @@ def match_parts(client, data: dict, parts: list, progress):
                     "confidence": round(best_s, 3),
                     "confident": confident,
                 }
+                comp["part_id"] = best_p["part_no"] if confident else ""
                 if confident:
-                    comp["part_id"] = best_p["part_no"]
                     matched += 1
     data["parts_matched"] = matched
     data["official_parts"] = parts
