@@ -86,6 +86,20 @@ body.fun-mode #sidebar{--sb-bg:#0c0a16;--sb-ink:#f1f1f8;--sb-sub:#9aa0bd;--sb-li
 .kg-head .x{background:#241f33;border:0;color:#fff;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:14px;flex:0 0 auto}
 .kg-head .x:hover{background:#3a3450}
 #kg-canvas{position:absolute;top:54px;left:0;right:0;bottom:0;background:#0e0c16}
+.kg-ask-wrap{position:absolute;top:66px;left:50%;transform:translateX(-50%);width:640px;max-width:92%;z-index:5}
+.kg-ask{width:100%;box-sizing:border-box;padding:12px 16px;border-radius:12px;border:1px solid #322c48;
+  background:#1b1830;color:#fff;font-size:14px;box-shadow:0 10px 32px rgba(0,0,0,.45);outline:none}
+.kg-ask:focus{border-color:#C1006F}
+.kg-ask::placeholder{color:#8a87a0}
+.kg-answer{margin-top:10px;background:#15131c;border:1px solid #2a2740;border-radius:13px;
+  padding:14px 16px;color:#e8e8f0;font-size:13.5px;line-height:1.55;box-shadow:0 12px 36px rgba(0,0,0,.5);
+  max-height:48vh;overflow:auto}
+.kg-ans-text{margin:0 0 6px;white-space:pre-wrap}
+.kg-ans-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#8a87a0;margin:10px 0 7px}
+.kg-chip{display:inline-flex;align-items:center;gap:8px;background:#241b2f;border:1px solid #3a2a44;
+  border-radius:10px;padding:6px 11px 6px 6px;margin:0 7px 7px 0;cursor:pointer;font-size:12px;color:#fff}
+.kg-chip:hover{border-color:#C1006F;background:#2c2138}
+.kg-chip img{width:36px;height:25px;border-radius:5px;object-fit:cover;background:#0e0c16}
 .sb-toggle{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.42);color:#fff;
   width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:15px;flex:0 0 auto;line-height:1}
 .sb-toggle:hover{background:rgba(255,255,255,.32)}

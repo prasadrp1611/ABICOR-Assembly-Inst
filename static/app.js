@@ -874,6 +874,8 @@ async function loadSessions() {
 document.addEventListener("click", (e) => {
   const a = e.target.closest("[data-arch]");
   if (a) { e.stopPropagation(); archiveSession(a.dataset.arch, a.dataset.to === "1"); return; }
+  const o = e.target.closest("[data-open]");
+  if (o) { closeKnowledgeGraph(); openSession(o.dataset.open); return; }   // graph citation → open tutorial
   const c = e.target.closest(".sb-card");
   if (c) openSession(c.dataset.id);
 });
@@ -954,6 +956,30 @@ function closeKnowledgeGraph() {
   $("#kg-modal").classList.add("hidden");
   if (kgNet) { kgNet.destroy(); kgNet = null; }
 }
+async function askKnowledge() {
+  const inp = $("#kg-ask"), ans = $("#kg-answer");
+  if (!inp) return;
+  const q = inp.value.trim();
+  if (!q) return;
+  ans.classList.remove("hidden");
+  ans.innerHTML = '<div class="kg-ans-text">Traversing the graph…</div>';
+  try {
+    const r = await fetch("/api/ask", {
+      method: "POST", headers: authH({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ question: q }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { ans.innerHTML = `<div class="kg-ans-text">${esc(d.detail || "Couldn't answer that.")}</div>`; return; }
+    let html = `<div class="kg-ans-text">${esc(d.answer || "Nothing found in the knowledge base for that.")}</div>`;
+    if (d.sessions && d.sessions.length) {
+      html += '<div class="kg-ans-label">📹 Demonstrated in — click to open the tutorial</div>';
+      html += d.sessions.map((s) =>
+        `<span class="kg-chip" data-open="${s.id}"><img src="/api/jobs/${s.id}/frames/step_01.jpg" onerror="this.style.display='none'"/>${esc(s.name)}</span>`
+      ).join("");
+    }
+    ans.innerHTML = html;
+  } catch (e) { ans.innerHTML = '<div class="kg-ans-text">Network error — try again.</div>'; }
+}
 
 // ---- auto-hiding "peek" footer + collapsible sidebar ----
 let _footTimer;
@@ -998,6 +1024,7 @@ async function boot() {
   $("#sb-new") && $("#sb-new").addEventListener("click", showUpload);
   $("#sb-graph") && $("#sb-graph").addEventListener("click", openKnowledgeGraph);
   $("#kg-close") && $("#kg-close").addEventListener("click", closeKnowledgeGraph);
+  $("#kg-ask") && $("#kg-ask").addEventListener("keydown", (e) => { if (e.key === "Enter") askKnowledge(); });
   $("#sb-sort") && $("#sb-sort").addEventListener("change", loadSessions);
   $("#sb-toggle") && $("#sb-toggle").addEventListener("click", toggleSidebar);
   if (localStorage.getItem("abicor_sb_collapsed")) document.body.classList.add("sb-collapsed");

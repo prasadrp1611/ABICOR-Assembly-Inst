@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from google.genai import types
+from pydantic import BaseModel
 
 import config
 from schema import AssemblyDocument
@@ -459,17 +460,17 @@ def ontology_png(job_id: str):
     return FileResponse(f, media_type="image/png")
 
 
-@app.get("/api/knowledge")
-def knowledge_graph():
-    """Merge every (non-archived) session's ontology into ONE combined knowledge graph.
-    Same entity label across videos = one node (so the videos connect)."""
-    nodes, edges, n_sessions = {}, {}, 0
+def _combined_graph():
+    """All non-archived sessions' ontologies merged: nodes (with the session ids each
+    appears in), edges, and session metadata. Same label across videos = one node."""
+    nodes, edges, sessions = {}, {}, {}
     for d in config.JOBS_DIR.iterdir():
         of, sf = d / "ontology.json", d / "status.json"
         if not of.exists():
             continue
         try:
-            if sf.exists() and json.loads(sf.read_text(encoding="utf-8")).get("archived"):
+            st = json.loads(sf.read_text(encoding="utf-8")) if sf.exists() else {}
+            if st.get("archived"):
                 continue
             onto = json.loads(of.read_text(encoding="utf-8"))
         except Exception:
@@ -477,7 +478,12 @@ def knowledge_graph():
         ents = onto.get("entities") or []
         if not ents:
             continue
-        n_sessions += 1
+        opt = st.get("options", {})
+        sessions[d.name] = {
+            "id": d.name,
+            "name": opt.get("product_model") or opt.get("product_name") or st.get("video") or d.name,
+            "video": st.get("video"), "created_at": st.get("created_at"),
+        }
         local = {}
         for e in ents:
             label = (e.get("label") or "").strip()
@@ -493,15 +499,66 @@ def knowledge_graph():
             if sk and ok and sk != ok:
                 k = (sk, r.get("predicate", ""), ok)
                 edges[k] = edges.get(k, 0) + 1
+    return nodes, edges, sessions
+
+
+@app.get("/api/knowledge")
+def knowledge_graph():
+    """The combined knowledge graph for the visual view."""
     from collections import Counter
+    nodes, edges, sessions = _combined_graph()
     return {
         "nodes": [{"id": n["id"], "label": n["label"], "cls": n["cls"],
                    "sessions": len(n["sessions"])} for n in nodes.values()],
         "edges": [{"source": s, "target": o, "predicate": p, "weight": w}
                   for (s, p, o), w in edges.items()],
-        "stats": {"n_nodes": len(nodes), "n_edges": len(edges), "n_sessions": n_sessions,
+        "stats": {"n_nodes": len(nodes), "n_edges": len(edges), "n_sessions": len(sessions),
                   "classes": dict(Counter(n["cls"] for n in nodes.values()))},
     }
+
+
+class AskAnswer(BaseModel):
+    answer: str
+    session_ids: list[str] = []
+    key_entities: list[str] = []
+
+
+@app.post("/api/ask")
+def ask_knowledge(body: dict = Body(...), x_access_code: str = Header(default="")):
+    """Traverse the combined knowledge graph to answer a question, grounded in the source
+    videos — returns the answer + the session(s) whose tutorial best demonstrates it."""
+    if config.gateway_mode() and not config.check_code(x_access_code):
+        raise HTTPException(401, "Access code required, invalid, or revoked.")
+    if not config.has_key():
+        raise HTTPException(503, "The knowledge engine is offline right now.")
+    q = (body.get("question") or "").strip()[:500]
+    if not q:
+        raise HTTPException(400, "Ask a question.")
+    nodes, edges, sessions = _combined_graph()
+    if not nodes:
+        raise HTTPException(400, "No knowledge captured yet — generate a few documents first.")
+    ents = "\n".join(f"- {n['label']} [{n['cls']}] (in: {', '.join(sorted(n['sessions']))})"
+                     for n in list(nodes.values())[:400])
+    rels = "\n".join(f"- {s} -{p}-> {o}" for (s, p, o) in list(edges.keys())[:500])
+    sess = "\n".join(f"- {sid} = {m['name']}" for sid, m in sessions.items())
+    prompt = (
+        "You are the assembly-knowledge assistant for ABICOR. Answer the question by TRAVERSING the "
+        "knowledge graph below, built from real welding/assembly tutorial videos. Use ONLY this graph. "
+        "Give a clear, practical answer, then list the session id(s) whose video best demonstrates it "
+        "(most relevant first) and the key entities you used.\n\n"
+        f"QUESTION: {q}\n\nENTITIES (label [class] (in: session ids)):\n{ents}\n\n"
+        f"RELATIONSHIPS (subject -PREDICATE-> object):\n{rels}\n\nSESSIONS (id = name):\n{sess}")
+    try:
+        resp = config.get_client().models.generate_content(
+            model=config.MODEL, contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.2,
+                response_mime_type="application/json", response_schema=AskAnswer))
+        data = resp.parsed.model_dump() if resp.parsed else {}
+    except Exception:
+        raise HTTPException(502, "The assistant had a hiccup - please try again.")
+    cited = [sessions[s] for s in (data.get("session_ids") or []) if s in sessions][:5]
+    return {"answer": (data.get("answer") or "").strip(),
+            "sessions": cited, "entities": data.get("key_entities") or []}
 
 
 @app.get("/api/jobs/{job_id}/highlight")
