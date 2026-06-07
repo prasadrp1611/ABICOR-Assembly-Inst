@@ -4,6 +4,9 @@
 # revocable access codes (operator-managed; contains code hashes)
 access_codes.json
 
+# session document store (runtime state; rebuilt from jobs/ if deleted)
+sessions.json
+
 # key-vault runtime: handshake-token hashes, usage ledger, kill flag
 keyvault/tokens.json
 keyvault/usage.json

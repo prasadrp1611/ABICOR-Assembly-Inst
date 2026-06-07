@@ -47,6 +47,11 @@ def write_status(job_dir: Path, **fields):
         cur = json.loads(sf.read_text(encoding="utf-8"))
     cur.update(fields)
     sf.write_text(json.dumps(cur, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:
+        import store
+        store.upsert(cur)          # keep the JSON session store in sync
+    except Exception:
+        pass
     return cur
 
 

@@ -257,14 +257,11 @@ async def create_job(
 
 @app.get("/api/jobs")
 def list_jobs():
-    out = []
-    for d in config.JOBS_DIR.iterdir():
-        sf = d / "status.json"
-        if sf.exists():
-            try:
-                out.append(json.loads(sf.read_text(encoding="utf-8")))
-            except Exception:
-                pass
+    import store
+    out = store.all_sessions()
+    if not out:                       # cold/empty store → seed from the job folders once
+        store.backfill_from_disk()
+        out = store.all_sessions()
     out.sort(key=lambda j: j.get("created_at") or 0, reverse=True)   # newest first
     return out
 
