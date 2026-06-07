@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ABICOR — Access Codes</title>
+<style>
+ :root{--abi:#e2001a;--ink:#1a1a1a;--mut:#666;--line:#e6e6e6;--bg:#f6f6f8}
+ *{box-sizing:border-box} body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:var(--bg);color:var(--ink)}
+ header{background:#fff;border-bottom:1px solid var(--line);padding:16px 20px;display:flex;align-items:center;gap:10px}
+ header h1{font-size:17px;margin:0} header .tag{color:var(--mut);font-size:13px}
+ .wrap{max-width:860px;margin:0 auto;padding:20px}
+ .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+ .card h2{font-size:15px;margin:0 0 6px}
+ label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+ input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+ .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:150px}
+ button{background:var(--abi);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
+ button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+ button.warn{background:#fff;color:var(--abi);border:1px solid var(--abi);padding:6px 12px}
+ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
+ th{color:var(--mut);font-weight:600}
+ .codebox{background:#0d1117;color:#7ee787;font-family:ui-monospace,Menlo,monospace;font-size:24px;padding:16px;border-radius:10px;text-align:center;letter-spacing:2px;margin:10px 0}
+ .muted{color:var(--mut);font-size:13px}
+ .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px}
+ .on{background:#e6f4ea;color:#137333}.off{background:#fce8e6;color:#c5221f}
+ .hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <strong style="color:var(--abi);font-size:20px">ABICOR</strong>
+  <h1>Access Codes</h1><span class="tag">give people access · switch it off anytime</span>
+</header>
+<div class="wrap">
+
+  <div class="card" id="loginCard">
+    <h2>Unlock this page</h2>
+    <p class="muted">Enter the admin password (ask your team lead). It is saved on this device only.</p>
+    <label>Admin password</label>
+    <input id="tok" type="password" placeholder="admin password" onkeydown="if(event.key==='Enter')saveTok()"/>
+    <div style="margin-top:12px"><button onclick="saveTok()">Unlock</button></div>
+    <p id="loginErr" class="muted" style="color:var(--abi)"></p>
+  </div>
+
+  <div id="appui" class="hide">
+    <div class="card">
+      <h2>Issue a new access code</h2>
+      <p class="muted">A <b>code</b> lets one person use the ABICOR app on your Gemini key &mdash; they never see the key, and you can switch their code off in one click.</p>
+      <label>Who is it for?</label>
+      <input id="label" placeholder="e.g. ABICOR – Prasad"/>
+      <div class="row">
+        <div><label>Expires (optional)</label><input id="expires" type="date"/></div>
+        <div><label>Max uses (optional)</label><input id="maxuses" type="number" min="1" placeholder="unlimited"/></div>
+      </div>
+      <div style="margin-top:14px">
+        <button onclick="issue()">Issue code</button>
+        <button class="ghost" onclick="logout()">Lock page</button>
+      </div>
+      <div id="newCodeWrap" class="hide">
+        <p class="muted" style="margin-top:16px"><b>Copy this now &mdash; it is shown only once.</b> Give it to the person:</p>
+        <div class="codebox" id="newCode"></div>
+        <button class="ghost" onclick="copyCode()">Copy code</button>
+      </div>
+      <p id="issueErr" class="muted" style="color:var(--abi)"></p>
+    </div>
+
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">Existing codes
+        <button class="ghost" style="padding:6px 12px" onclick="load()">Refresh</button></h2>
+      <table>
+        <thead><tr><th>Who</th><th>Hint</th><th>Status</th><th>Uses</th><th>Expires</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="muted">Loading&hellip;</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+let TOK = localStorage.getItem('abi_admin') || '';
+const hdr = () => ({'X-Admin-Token': TOK, 'Content-Type':'application/json'});
+async function api(path, opt={}){
+  opt.headers = Object.assign(hdr(), opt.headers||{});
+  const r = await fetch(path, opt);
+  if(r.status===401 || r.status===404) throw new Error('Wrong admin password (or admin not enabled on server).');
+  if(!r.ok) throw new Error(((await r.json().catch(()=>({}))).detail) || ('HTTP '+r.status));
+  return r.json();
+}
+function showApp(){ $('#loginCard').classList.add('hide'); $('#appui').classList.remove('hide'); }
+function saveTok(){ TOK = $('#tok').value.trim(); localStorage.setItem('abi_admin', TOK); $('#loginErr').textContent='';
+  load().then(showApp).catch(e => $('#loginErr').textContent = e.message); }
+function logout(){ localStorage.removeItem('abi_admin'); location.reload(); }
+async function load(){
+  const d = await api('/api/admin/codes'); const rows = $('#rows'); rows.innerHTML='';
+  if(!d.codes.length){ rows.innerHTML='<tr><td colspan="6" class="muted">No codes yet &mdash; issue one above.</td></tr>'; return; }
+  for(const c of d.codes){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${c.label||'&mdash;'}</td><td class="muted">${c.hint||''}</td>
+      <td><span class="pill ${c.enabled?'on':'off'}">${c.enabled?'active':'revoked'}</span></td>
+      <td>${c.uses||0}${c.max_uses?(' / '+c.max_uses):''}</td><td>${c.expires||'never'}</td>
+      <td>${c.enabled?`<button class="warn" data-r="${c.id}">Revoke</button>`:`<button class="ghost" data-e="${c.id}">Enable</button>`}</td>`;
+    rows.appendChild(tr);
+  }
+  rows.querySelectorAll('[data-r]').forEach(b => b.onclick = () => act('revoke', b.dataset.r));
+  rows.querySelectorAll('[data-e]').forEach(b => b.onclick = () => act('enable', b.dataset.e));
+}
+async function act(verb, id){ await api(`/api/admin/codes/${id}/${verb}`, {method:'POST'}); load(); }
+async function issue(){
+  $('#issueErr').textContent='';
+  try{
+    const body = { label:$('#label').value.trim(), expires:$('#expires').value||null, max_uses:$('#maxuses').value||null };
+    const r = await api('/api/admin/codes', {method:'POST', body:JSON.stringify(body)});
+    $('#newCode').textContent = r.code; $('#newCodeWrap').classList.remove('hide'); $('#label').value=''; load();
+  }catch(e){ $('#issueErr').textContent = e.message; }
+}
+function copyCode(){ navigator.clipboard.writeText($('#newCode').textContent); }
+if(TOK){ load().then(showApp).catch(()=>{}); }
+</script>
+</body>
+</html>
