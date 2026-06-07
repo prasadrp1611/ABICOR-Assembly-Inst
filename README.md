@@ -10,6 +10,20 @@ own template.
 
 ---
 
+## 🌐 Two ways to use ABICOR
+
+**1) Hosted — nothing to install (recommended):** open **https://abicor.darth-hidious.com**,
+click the ⚙ gear, paste the **access code** your team gave you. Works on a phone.
+
+**2) Run locally:** clone + `setup` + `run` (below), then pick ONE:
+- **Your own Gemini key** — paste it in the ⚙ gear / `.env`.
+- **Team key-vault** — copy `.env.local.example` to `.env` and paste the **vault token**
+  your team gave you. Gemini is routed through the team vault on a *revocable* token; you
+  never hold the real key.
+
+> ⚠️ The `ABICOR-xxxx` **access codes work only on the hosted site (option 1)** — not in a
+> local copy. Local use needs your own key or a vault token.
+
 ## ✨ What it does
 
 - **Video → structured steps** — each physical action becomes one numbered instruction point.
