@@ -2,9 +2,16 @@
 Tiered SAM (Segment Anything) backend via HuggingFace transformers.
 
 Preference order (config.SAM_PREFERENCE), first that loads wins:
-  sam3 -> facebook/sam3                      (best, GATED: needs HF_TOKEN + license)
-  sam2 -> facebook/sam2.1-hiera-base-plus    (open, Apache-2.0, small, fast)
-  sam1 -> facebook/sam-vit-base              (open, universal fallback)
+  sam31 -> facebook/sam3.1                    (newest; opt-in — see note below)
+  sam3  -> facebook/sam3                      (best loadable, GATED: needs HF_TOKEN + license)
+  sam2  -> facebook/sam2.1-hiera-base-plus    (open, Apache-2.0, small, fast)
+  sam1  -> facebook/sam-vit-base              (open, universal fallback)
+
+Note on sam31: as of this writing facebook/sam3.1 is published as a raw *checkpoint*
+(no `transformers` architecture wired in yet), so from_pretrained can't load it and
+this tier simply falls through to sam3. It is therefore OFF by default; enable it with
+SAM_PREFERENCE=sam31,sam3,sam2,sam1 and it will start working the moment a transformers
+build of 3.1 ships — no further code change needed.
 
 The engine localises a part (bounding box); SAM turns that box into a pixel
 mask. If torch/transformers are missing, available() is False and the app falls
@@ -19,6 +26,7 @@ import config
 _load_lock = threading.Lock()
 
 _MODEL_IDS = {
+    "sam31": "facebook/sam3.1",
     "sam3": "facebook/sam3",
     "sam2": "facebook/sam2.1-hiera-base-plus",
     "sam1": "facebook/sam-vit-base",
@@ -51,8 +59,9 @@ def _load_one(kind: str):
         from transformers import Sam2Model, Sam2Processor
         proc = Sam2Processor.from_pretrained(mid)
         model = Sam2Model.from_pretrained(mid)
-    elif kind == "sam3":
-        # SAM 3's geometry/box-promptable head (gated)
+    elif kind in ("sam3", "sam31"):
+        # SAM 3 / 3.1 geometry/box-promptable head (gated). Same transformers
+        # classes; sam31 just points at the newer checkpoint when it's loadable.
         from transformers import Sam3TrackerModel, Sam3TrackerProcessor
         proc = Sam3TrackerProcessor.from_pretrained(mid, token=tok)
         model = Sam3TrackerModel.from_pretrained(mid, token=tok)
