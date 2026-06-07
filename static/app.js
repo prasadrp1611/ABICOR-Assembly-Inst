@@ -876,6 +876,8 @@ document.addEventListener("click", (e) => {
   if (a) { e.stopPropagation(); archiveSession(a.dataset.arch, a.dataset.to === "1"); return; }
   const o = e.target.closest("[data-open]");
   if (o) { closeKnowledgeGraph(); openSession(o.dataset.open); return; }   // graph citation → open tutorial
+  const sg = e.target.closest("[data-seg]");
+  if (sg) { segmentPart(sg); return; }                                    // part card → SAM segment
   const c = e.target.closest(".sb-card");
   if (c) openSession(c.dataset.id);
 });
@@ -977,8 +979,30 @@ async function askKnowledge() {
         `<span class="kg-chip" data-open="${s.id}"><img src="/api/jobs/${s.id}/frames/step_01.jpg" onerror="this.style.display='none'"/>${esc(s.name)}</span>`
       ).join("");
     }
+    if (d.parts && d.parts.length) {
+      html += '<div class="kg-ans-label">🔩 Matched parts — frame + Part-ID from your BoM · click to segment</div>';
+      html += '<div class="kg-parts">' + d.parts.map((p) =>
+        `<div class="kg-part" data-seg="${p.session}|${p.step}|${encodeURIComponent(p.name)}">
+           <img src="${p.frame}" onerror="this.style.display='none'"/>
+           <div class="kg-part-name">${esc(p.name)}</div>
+           ${p.part_id ? `<div class="kg-part-id">${esc(p.part_id)}</div>`
+                       : '<div class="kg-part-id none">no BoM match</div>'}
+         </div>`).join("") + "</div>";
+    }
     ans.innerHTML = html;
   } catch (e) { ans.innerHTML = '<div class="kg-ans-text">Network error — try again.</div>'; }
+}
+async function segmentPart(el) {
+  const [sid, step, name] = el.dataset.seg.split("|");
+  const img = el.querySelector("img");
+  if (!img || el.dataset.done) return;
+  img.style.opacity = ".45"; el.title = "segmenting…";
+  try {
+    const r = await fetch(`/api/jobs/${sid}/highlight?step=${step}&mode=sam&label=${name}`, { headers: authH() });
+    const d = await r.json();
+    if (d.url) { img.src = d.url; el.dataset.done = "1"; el.title = "segmented (" + (d.backend || "sam") + ")"; }
+  } catch (e) {}
+  img.style.opacity = "1";
 }
 
 // ---- auto-hiding "peek" footer + collapsible sidebar ----

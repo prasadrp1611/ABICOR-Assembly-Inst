@@ -523,6 +523,39 @@ class AskAnswer(BaseModel):
     key_entities: list[str] = []
 
 
+def _answer_parts(session_ids, key_entities):
+    """For the cited sessions, find components matching the answer's key entities and return
+    each with its BoM-matched Part-ID (gemini-embedding-2) and the step frame that shows it.
+    The frame can be SAM-segmented on demand via /highlight."""
+    ents = [e.lower().strip() for e in (key_entities or []) if e and e.strip()]
+    out, seen = [], set()
+    for sid in list(session_ids)[:2]:
+        af = config.JOBS_DIR / sid / "assembly.json"
+        if not af.exists():
+            continue
+        try:
+            data = json.loads(af.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for st in data.get("stations", []):
+            for s in st.get("steps", []):
+                stepno = s.get("step_number")
+                for c in s.get("components", []):
+                    nm = (c.get("name") or "").strip()
+                    nml = nm.lower()
+                    if not nm or (sid, nml) in seen:
+                        continue
+                    if not any(e in nml or nml in e for e in ents):
+                        continue
+                    seen.add((sid, nml))
+                    out.append({
+                        "session": sid, "name": nm, "step": stepno,
+                        "part_id": c.get("part_id") or "",
+                        "frame": f"/api/jobs/{sid}/frames/step_{int(stepno):02d}.jpg" if stepno else "",
+                    })
+    return out[:6]
+
+
 @app.post("/api/ask")
 def ask_knowledge(body: dict = Body(...), x_access_code: str = Header(default="")):
     """Traverse the combined knowledge graph to answer a question, grounded in the source
@@ -557,8 +590,9 @@ def ask_knowledge(body: dict = Body(...), x_access_code: str = Header(default=""
     except Exception:
         raise HTTPException(502, "The assistant had a hiccup - please try again.")
     cited = [sessions[s] for s in (data.get("session_ids") or []) if s in sessions][:5]
+    parts = _answer_parts([s["id"] for s in cited] or list(sessions)[:1], data.get("key_entities") or [])
     return {"answer": (data.get("answer") or "").strip(),
-            "sessions": cited, "entities": data.get("key_entities") or []}
+            "sessions": cited, "entities": data.get("key_entities") or [], "parts": parts}
 
 
 @app.get("/api/jobs/{job_id}/highlight")
